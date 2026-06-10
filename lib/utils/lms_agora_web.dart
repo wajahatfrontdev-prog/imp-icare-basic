@@ -1,0 +1,59 @@
+// Web-only — Jitsi Meet External API for LMS live sessions
+import 'dart:js_interop';
+import 'dart:ui_web' as ui;
+import 'package:flutter/widgets.dart';
+import 'package:web/web.dart' as web;
+
+@JS('lmsJitsiJoin')
+external void _lmsJitsiJoinJS(JSString roomName, JSString displayName, JSBoolean isInstructor);
+
+@JS('lmsJitsiLeave')
+external void _lmsJitsiLeaveJS();
+
+@JS('lmsJitsiMuteMic')
+external void _lmsJitsiMuteMicJS(JSBoolean mute);
+
+@JS('lmsJitsiMuteCamera')
+external void _lmsJitsiMuteCameraJS(JSBoolean mute);
+
+@JS('lmsStartRecording')
+external void _lmsStartRecordingJS();
+
+@JS('lmsStopRecordingAndUpload')
+external void _lmsStopRecordingAndUploadJS(JSString sessionId, JSString backendUrl, JSString authToken);
+
+// displayName replaces appId+token — Jitsi needs no token for public rooms
+Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor) async {
+  _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS);
+}
+
+void lmsLeaveChannel() => _lmsJitsiLeaveJS();
+void lmsMuteMic(bool mute) => _lmsJitsiMuteMicJS(mute.toJS);
+void lmsMuteCamera(bool mute) => _lmsJitsiMuteCameraJS(mute.toJS);
+void lmsSetPanelWidth(bool panelOpen) {}
+void lmsStartRecording() => _lmsStartRecordingJS();
+void lmsStopRecordingAndUpload(String sessionId, String backendUrl, String authToken) =>
+    _lmsStopRecordingAndUploadJS(sessionId.toJS, backendUrl.toJS, authToken.toJS);
+Future<void> lmsEnableMediaAndPublish() async {} // no-op: Jitsi manages media internally
+
+void lmsSetCallbacks({void Function(int, bool)? onRemote, void Function()? onJoined}) {}
+Widget lmsGetLocalVideoWidget(String? viewName) => const SizedBox.shrink();
+Widget lmsGetRemoteVideoWidget(int uid, String channelId) => const SizedBox.shrink();
+
+/// Register the LMS Jitsi host container as a Flutter platform view.
+/// Creates a single div that lmsJitsiJoin() will embed the Jitsi iframe into.
+String registerLmsVideoView() {
+  const viewId = 'lms-jitsi-view';
+  try {
+    ui.platformViewRegistry.registerViewFactory(viewId, (int id) {
+      final container = web.document.createElement('div') as web.HTMLDivElement;
+      container.id = 'lms-jitsi-host';
+      container.style.width = '100%';
+      container.style.height = '100%';
+      container.style.background = '#1C2333';
+      container.style.position = 'relative';
+      return container;
+    });
+  } catch (_) {}
+  return viewId;
+}
