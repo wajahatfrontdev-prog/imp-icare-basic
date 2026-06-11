@@ -22,6 +22,9 @@ external void _lmsStartRecordingJS();
 @JS('lmsStopRecordingAndUpload')
 external void _lmsStopRecordingAndUploadJS(JSString sessionId, JSString backendUrl, JSString authToken);
 
+@JS('lmsJitsiIsClosed')
+external JSBoolean _lmsJitsiIsClosedJS();
+
 // displayName replaces appId+token — Jitsi needs no token for public rooms
 Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor) async {
   _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS);
@@ -35,6 +38,15 @@ void lmsStartRecording() => _lmsStartRecordingJS();
 void lmsStopRecordingAndUpload(String sessionId, String backendUrl, String authToken) =>
     _lmsStopRecordingAndUploadJS(sessionId.toJS, backendUrl.toJS, authToken.toJS);
 Future<void> lmsEnableMediaAndPublish() async {} // no-op: Jitsi manages media internally
+
+/// True after the user presses Jitsi's own hangup button (readyToClose event)
+bool lmsIsSessionClosed() {
+  try {
+    return _lmsJitsiIsClosedJS().toDart;
+  } catch (_) {
+    return false;
+  }
+}
 
 void lmsSetCallbacks({void Function(int, bool)? onRemote, void Function()? onJoined}) {}
 Widget lmsGetLocalVideoWidget(String? viewName) => const SizedBox.shrink();

@@ -15,21 +15,46 @@ String _detectPlatform() {
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
-  ApiService._internal();
 
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: ApiConfig.baseUrl,
-      connectTimeout: const Duration(seconds: 60),
-      receiveTimeout: const Duration(seconds: 60),
-      headers: {
-        'Content-Type': 'application/json',
-        // Only send x-platform on native mobile — web doesn't need it and it triggers CORS preflight
-        if (!kIsWeb) 'x-platform': _detectPlatform(),
-      },
-    ),
-  );
+  late final Dio _dio;
   final SharedPref _sharedPref = SharedPref();
+
+  ApiService._internal() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        connectTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
+        headers: {
+          'Content-Type': 'application/json',
+          // Only send x-platform on native mobile — web doesn't need it and it triggers CORS preflight
+          if (!kIsWeb) 'x-platform': _detectPlatform(),
+        },
+      ),
+    );
+
+    // Guard against HTML responses (e.g. Vercel catch-all returning index.html
+    // when a route is misconfigured). Dio tries to parse JSON before our code
+    // can inspect the body, causing an uncaught FormatException on startup.
+    _dio.interceptors.add(InterceptorsWrapper(
+      onResponse: (response, handler) {
+        final data = response.data;
+        if (data is String && data.trimLeft().startsWith('<!')) {
+          return handler.reject(
+            DioException(
+              requestOptions: response.requestOptions,
+              response: response,
+              type: DioExceptionType.badResponse,
+              error: 'Server returned HTML instead of JSON. '
+                  'URL: ${response.requestOptions.uri}',
+            ),
+          );
+        }
+        return handler.next(response);
+      },
+    ));
+  }
+
 
   Future<void> _setAuthToken({String? providedToken}) async {
     String? token = providedToken;

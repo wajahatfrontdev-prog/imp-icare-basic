@@ -911,6 +911,8 @@ class _MedicineSearchBarState extends State<_MedicineSearchBar> {
     super.initState();
     PharmacyService().getAllPharmacies().then((data) {
       if (mounted) setState(() => _allPharmacies = data);
+    }).catchError((e) {
+      debugPrint('⚠️ PharmacyService.getAllPharmacies error: $e');
     });
     _focusNode.addListener(() {
       if (!_focusNode.hasFocus) {
@@ -1182,6 +1184,8 @@ class _LabSearchBarState extends State<_LabSearchBar> {
     super.initState();
     LaboratoryService().getAllLaboratories().then((data) {
       if (mounted) setState(() => _allLabs = data.cast<Map<String, dynamic>>());
+    }).catchError((e) {
+      debugPrint('⚠️ LaboratoryService.getAllLaboratories error: $e');
     });
     _focusNode.addListener(() {
       if (!_focusNode.hasFocus) {

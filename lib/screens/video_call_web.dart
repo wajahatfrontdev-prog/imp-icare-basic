@@ -41,6 +41,9 @@ external bool _jitsiIsRemoteJoined();
 @JS('jitsiIsRemoteLeft')
 external bool _jitsiIsRemoteLeft();
 
+@JS('jitsiIsClosed')
+external bool _jitsiIsClosed();
+
 class VideoCall extends StatefulWidget {
   final String channelName;
   final String remoteUserName;
@@ -91,6 +94,7 @@ class _VideoCallWebState extends State<VideoCall> {
   Timer? _remoteJoinPoller;
   Timer? _declinePoller;
   Timer? _remoteLeftPoller;
+  Timer? _closedPoller; // detects Jitsi hangup so this screen can close
 
   // Side panel state
   bool _showChat = false;
@@ -147,7 +151,34 @@ class _VideoCallWebState extends State<VideoCall> {
     // Register beforeunload handler so closing the browser marks appointment completed
     _registerBeforeUnload();
     _initRole();
-    _startNoAnswerTimer();
+    // Jitsi's own UI handles ringing/joining — watch for its hangup button
+    _startClosedPoller();
+  }
+
+  /// Poll the JS flag set when the user presses Jitsi's own hangup button.
+  /// Jitsi's UI is the only call UI now, so this is how the screen closes.
+  void _startClosedPoller() {
+    _closedPoller = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (!mounted) return;
+      bool closed = false;
+      try { closed = _jitsiIsClosed(); } catch (_) {}
+      if (!closed) return;
+      _closedPoller?.cancel();
+
+      // Keep consultation rejoinable from the chat screen
+      if (widget.appointmentId != null && widget.appointmentId!.isNotEmpty) {
+        try {
+          await AppointmentService().updateAppointmentStatus(
+            appointmentId: widget.appointmentId!,
+            status: 'in_progress',
+          );
+        } catch (_) {}
+      }
+      if (mounted) {
+        widget.onCallEnded?.call();
+        Navigator.pop(context);
+      }
+    });
   }
 
   Future<void> _syncTimerFromSharedPrefs() async {
@@ -447,26 +478,8 @@ class _VideoCallWebState extends State<VideoCall> {
 
   void _startSessionTimer() {
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() => _sessionSeconds++);
-        // At exactly 15 minutes — show a non-blocking notification
-        if (_sessionSeconds == 900) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.timer_rounded, color: Colors.white, size: 18),
-                  SizedBox(width: 10),
-                  Text('15 minutes reached — consultation continues until you end it'),
-                ],
-              ),
-              backgroundColor: Colors.orange.shade700,
-              duration: const Duration(seconds: 5),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
+      if (!mounted) return;
+      _sessionSeconds++;
     });
   }
 
@@ -1085,6 +1098,7 @@ class _VideoCallWebState extends State<VideoCall> {
     _remoteJoinPoller?.cancel();
     _declinePoller?.cancel();
     _remoteLeftPoller?.cancel();
+    _closedPoller?.cancel();
     _chatController.dispose();
     _chatScroll.dispose();
     _doctorNotesController.dispose();
@@ -1095,251 +1109,26 @@ class _VideoCallWebState extends State<VideoCall> {
   @override
   Widget build(BuildContext context) {
     if (_error != null) return _buildError();
-    if (widget.isAudioOnly) return _buildAudioCallUI();
+    // Jitsi provides the full call UI (ringing, mic/cam, chat, hangup).
+    // No Flutter overlays — just the Jitsi iframe filling the screen.
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Row(
+      body: Stack(
         children: [
-          // ── Main video area ──────────────────────────────────────────
-          Expanded(
-            child: Stack(
-              children: [
-                SizedBox.expand(child: HtmlElementView(viewType: _viewId)),
-
-                // Loading overlay (joining Agora)
-                if (_loading)
-                  Container(
-                    color: const Color(0xFF0A1628),
-                    child: const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(color: Colors.white),
-                          SizedBox(height: 20),
-                          Text('Connecting...',
-                              style: TextStyle(color: Colors.white70)),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // Ringing overlay — joined Agora but waiting for remote user
-                if (!_loading && _joined && !_remoteJoined)
-                  Container(
-                    color: const Color(0xFF0A1628).withValues(alpha: 0.92),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 100, height: 100,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white12,
-                              border: Border.all(color: Colors.orangeAccent, width: 3),
-                            ),
-                            child: Center(
-                              child: Text(
-                                widget.remoteUserName.isNotEmpty ? widget.remoteUserName[0].toUpperCase() : '?',
-                                style: const TextStyle(fontSize: 42, color: Colors.white, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Text(_remoteDisplayName, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 8),
-                          const Text('Ringing... waiting for answer', style: TextStyle(color: Colors.orangeAccent, fontSize: 14)),
-                          const SizedBox(height: 32),
-                          ElevatedButton.icon(
-                            onPressed: _leaveVideo,
-                            icon: const Icon(Icons.call_end_rounded),
-                            label: const Text('Cancel'),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30))),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // Top bar: remote name + session timer
-                if (_joined)
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(_remoteDisplayName,
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 14)),
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _sessionSeconds >= 900
-                                ? Colors.orange.withValues(alpha: 0.8)
-                                : Colors.black45,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.timer_rounded,
-                                  color: Colors.white70, size: 14),
-                              const SizedBox(width: 4),
-                              Text(_sessionTimeStr,
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                // Bottom controls
-                Positioned(
-                  bottom: 32,
-                  left: 0,
-                  right: 0,
-                  child: Column(
-                    children: [
-                      // Side action buttons row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (_isDoctor) ...[
-                          _sideBtn(
-                            icon: Icons.note_alt_rounded,
-                            label: "Doctor's Notes",
-                            active: _showDoctorNotes,
-                            badgeCount: 0,
-                            onTap: () => setState(() {
-                              _showDoctorNotes = !_showDoctorNotes;
-                              if (_showDoctorNotes) {
-                                _showChat = false;
-                                _showHistory = false;
-                                _showPastConsultations = false;
-                              }
-                            }),
-                          ),
-                          const SizedBox(width: 10),
-                          _sideBtn(
-                            icon: Icons.history_rounded,
-                            label: 'Past Consultations',
-                            active: _showPastConsultations,
-                            badgeCount: 0,
-                            onTap: () {
-                              setState(() {
-                                _showPastConsultations = !_showPastConsultations;
-                                if (_showPastConsultations) {
-                                  _showChat = false;
-                                  _showHistory = false;
-                                  _showDoctorNotes = false;
-                                }
-                              });
-                              if (_showPastConsultations && !_pastConsultationsLoaded && !_pastConsultationsLoading) {
-                                _loadPastConsultations();
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 10),
-                          ],
-                          _sideBtn(
-                            icon: Icons.chat_bubble_outline_rounded,
-                            label: 'Chat',
-                            active: _showChat,
-                            badgeCount: _unreadChatCount,
-                            onTap: () => setState(() {
-                              _showChat = !_showChat;
-                              if (_showChat) {
-                                _showHistory = false;
-                                _showDoctorNotes = false;
-                                _showPastConsultations = false;
-                                _unreadChatCount = 0;
-                              }
-                            }),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Main controls row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _controlBtn(
-                            icon: _micMuted
-                                ? Icons.mic_off_rounded
-                                : Icons.mic_rounded,
-                            color: _micMuted ? Colors.grey : Colors.white,
-                            bg: Colors.white24,
-                            onTap: _toggleMic,
-                            tooltip: _micMuted ? 'Unmute' : 'Mute',
-                          ),
-                          const SizedBox(width: 16),
-                          // Red button — leave video only (can rejoin)
-                          _controlBtn(
-                            icon: Icons.call_end_rounded,
-                            color: Colors.white,
-                            bg: Colors.red,
-                            onTap: _leaveVideo,
-                            size: 64,
-                            tooltip: 'Leave Video',
-                          ),
-                          const SizedBox(width: 16),
-                          if (!widget.isAudioOnly)
-                            _controlBtn(
-                              icon: _camOff
-                                  ? Icons.videocam_off_rounded
-                                  : Icons.videocam_rounded,
-                              color: _camOff ? Colors.grey : Colors.white,
-                              bg: Colors.white24,
-                              onTap: _toggleCam,
-                              tooltip: _camOff ? 'Start Camera' : 'Stop Camera',
-                            ),
-                          const SizedBox(width: 16),
-                          // Purple button — end consultation permanently
-                          _controlBtn(
-                            icon: Icons.videocam_off_rounded,
-                            color: Colors.white,
-                            bg: const Color(0xFF7C3AED),
-                            onTap: _endConsultation,
-                            size: 56,
-                            tooltip: 'End Consultation',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Red = Leave Video  •  Purple = End Consultation',
-                        style: TextStyle(color: Colors.white38, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Side panel ───────────────────────────────────────────────
-          if (_showChat || _showHistory || _showDoctorNotes || _showPastConsultations)
+          Positioned.fill(child: HtmlElementView(viewType: _viewId)),
+          if (_loading)
             Container(
-              width: 340,
-              color: const Color(0xFF0F172A),
-              child: _showChat
-                  ? _buildChatPanel()
-                  : _showDoctorNotes
-                      ? _buildDoctorNotesPanel()
-                      : _showPastConsultations
-                          ? _buildPastConsultationsPanel()
-                          : _buildHistoryPanel(),
+              color: const Color(0xFF0A1628),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 20),
+                    Text('Connecting...', style: TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              ),
             ),
         ],
       ),

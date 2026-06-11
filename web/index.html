@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="iCare">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; img-src 'self' data: https: http: blob:; frame-src 'self' https://jitsi.ow2.org https://meet.jit.si; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://jitsi.ow2.org https://meet.jit.si https://cdn.jsdelivr.net; connect-src 'self' https: http: wss:;">
+  <meta http-equiv="Content-Security-Policy" content="img-src 'self' data: https: http: blob:; frame-src 'self' https: blob:;">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="icon" type="image/png" href="favicon.png"/>
   <title>iCare</title>
@@ -38,15 +38,12 @@
     <img src="icare_logo.png" alt="iCare" style="width:160px;height:160px;object-fit:contain;">
     <div class="spinner"></div>
   </div>
-  <!-- Jitsi Meet External API — primary: meet.jit.si, fallback: jitsi.ow2.org -->
-  <script src="https://meet.jit.si/external_api.js" defer></script>
   <script>
     function _hideLoading() {
       var loading = document.getElementById('loading');
       if (loading) loading.style.display = 'none';
     }
     window.addEventListener('flutter-first-frame', _hideLoading);
-    // Fallback: hide after 30s in case the event never fires
     setTimeout(_hideLoading, 30000);
 
     // ── Raise Flutter glass pane above platform views (Jitsi iframe) ────────
@@ -56,196 +53,113 @@
       });
     };
 
-    // ── GLOBAL: Ensure Jitsi script has loaded, with fallback retry ────────
-    // NOTE: This must be a global function because both the consultation Jitsi
-    // and LMS Jitsi scripts (in separate <script> blocks) call it.
-    window._ensureJitsiScript = function(callback, retries) {
-      retries = retries || 0;
-      if (typeof JitsiMeetExternalAPI !== 'undefined') {
-        callback();
-        return;
-      }
-      if (retries > 20) {
-        console.error('Jitsi script load failed after 10 seconds');
-        // Try reloading the script
-        var script = document.createElement('script');
-        script.src = 'https://jitsi.ow2.org/external_api.js';
-        script.onload = function() { callback(); };
-        script.onerror = function() {
-          // Fallback to meet.jit.si CDN
-          var fallbackScript = document.createElement('script');
-          fallbackScript.src = 'https://meet.jit.si/external_api.js';
-          fallbackScript.onload = function() { callback(); };
-          document.head.appendChild(fallbackScript);
-        };
-        document.head.appendChild(script);
-        return;
-      }
-      setTimeout(function() { window._ensureJitsiScript(callback, retries + 1); }, 500);
-    };
-
-    // ── Jitsi Meet helpers — Doctor/Patient Consultation ──────────────────
-    var _jitsiApi = null;
+    // ── Jitsi Meet helpers — Doctor/Patient Consultation (direct iframe) ──
+    // Uses meet.jit.si via plain <iframe> — no External API, no frame-ancestors issue.
     var _jitsiRemoteJoined = false;
     var _jitsiRemoteLeft = false;
-    var _jitsiContainerId = 'jitsi-container-' + Date.now();
+    var _jitsiClosed = false;
+    var _jitsiIframe = null;
+    var _jitsiMsgHandler = null;
 
     window.jitsiJoin = function(roomName, displayName, audioOnly) {
       return new Promise(function(resolve) {
-        // Create a fresh unique container ID for each call
-        _jitsiContainerId = 'jitsi-container-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
-        
-        window._ensureJitsiScript(function() {
+        var checkContainer = function(retries) {
+          retries = retries || 0;
+          var container = document.getElementById('jitsi-container');
+          if (!container) {
+            if (retries > 30) { resolve('error:jitsi-container not found'); return; }
+            setTimeout(function() { checkContainer(retries + 1); }, 300);
+            return;
+          }
           try {
-            if (_jitsiApi) {
-              try {
-                // Properly destroy old Jitsi API before creating new one
-                _jitsiApi.removeAllListeners();
-                _jitsiApi.dispose();
-              } catch(_) {}
-              _jitsiApi = null;
-            }
+            // Clean up any previous session
+            if (_jitsiMsgHandler) { window.removeEventListener('message', _jitsiMsgHandler); _jitsiMsgHandler = null; }
+            if (_jitsiIframe) { try { _jitsiIframe.src = 'about:blank'; } catch(_) {} }
+            container.innerHTML = '';
             _jitsiRemoteJoined = false;
             _jitsiRemoteLeft = false;
+            _jitsiClosed = false;
 
-            // Create the container element dynamically instead of relying on a static ID
-            var allContainers = document.querySelectorAll('[id^="jitsi-container-"]');
-            allContainers.forEach(function(el) { if (el.parentNode) el.parentNode.removeChild(el); });
+            var hash = [
+              'config.prejoinPageEnabled=false',
+              'config.requireDisplayName=false',
+              'config.disableLobbyMode=true',
+              'config.enableWelcomePage=false',
+              'config.enableClosePage=false',
+              'config.doNotStoreRoom=true',
+              'config.disableDeepLinking=true',
+              'config.disableInviteFunctions=true',
+              'config.hideLobbyButton=true',
+              'config.startWithAudioMuted=false',
+              'config.startWithVideoMuted=' + (audioOnly === true ? 'true' : 'false'),
+              'userInfo.displayName=' + encodeURIComponent(displayName || 'User')
+            ].join('&');
 
-            var container = document.getElementById(_jitsiContainerId);
-            if (!container) {
-              // Container not in DOM yet — create a temporary one
-              var tempContainer = document.createElement('div');
-              tempContainer.id = _jitsiContainerId;
-              tempContainer.style.width = '100%';
-              tempContainer.style.height = '100%';
-              // Try to find the Flutter platform view container
-              var flutterView = document.querySelector('flt-platform-view');
-              if (flutterView) {
-                flutterView.appendChild(tempContainer);
-              } else {
-                document.body.appendChild(tempContainer);
-              }
-              container = tempContainer;
-            }
+            var iframe = document.createElement('iframe');
+            iframe.src = 'https://meet.jit.si/' + roomName + '#' + hash;
+            iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
+            iframe.allow = 'camera; microphone; fullscreen; display-capture; autoplay';
+            container.appendChild(iframe);
+            _jitsiIframe = iframe;
 
-            _jitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
-              roomName: roomName,
-              width: '100%',
-              height: '100%',
-              parentNode: container,
-              configOverwrite: {
-                startWithAudioMuted: false,
-                startWithVideoMuted: audioOnly === true,
-                disableDeepLinking: true,
-                prejoinPageEnabled: false,
-                enableWelcomePage: false,
-                enableClosePage: false,
-                requireDisplayName: false,
-                doNotStoreRoom: true,
-                disableInviteFunctions: true,
-                disableLobbyMode: true,
-                lobby: { enabled: false, autoKnock: false },
-                enableLobbyChat: false,
-                hideLobbyButton: true,
-              },
-              interfaceConfigOverwrite: {
-                SHOW_JITSI_WATERMARK: false,
-                SHOW_WATERMARK_FOR_GUESTS: false,
-                MOBILE_APP_PROMO: false,
-              },
-              userInfo: { displayName: displayName || 'User' }
-            });
-
-            // Auto-admit any participant waiting in the lobby
-            _jitsiApi.addListener('knockingParticipant', function(e) {
-              try { _jitsiApi.executeCommand('answerKnockingParticipant', e.participant.id, true); } catch(_) {}
-            });
-
-            // Disable lobby after joining
-            _jitsiApi.addListener('videoConferenceJoined', function() {
-              setTimeout(function() {
-                try { _jitsiApi.executeCommand('toggleLobby', false); } catch(_) {}
-              }, 1000);
-              // Reset remoteLeft when we join - prevents stale state
-              _jitsiRemoteLeft = false;
-            });
-
-            // Track user count robustly
-            var _jitsiParticipantCount = 1; // self
-            _jitsiApi.addListener('participantJoined', function(event) {
-              _jitsiParticipantCount++;
-              _jitsiRemoteJoined = true;
-              _jitsiRemoteLeft = false; // reset when anyone joins
-              console.log('Jitsi: participant joined', event.displayName, 'count:', _jitsiParticipantCount);
-            });
-
-            _jitsiApi.addListener('participantLeft', function(event) {
-              _jitsiParticipantCount = Math.max(0, _jitsiParticipantCount - 1);
-              // Only mark remoteLeft if we were connected to someone AND they all left
-              if (_jitsiRemoteJoined && _jitsiParticipantCount <= 1) {
+            // Detect hangup/events via postMessage from Jitsi iframe
+            _jitsiMsgHandler = function(e) {
+              if (!e.origin || e.origin.indexOf('jit.si') === -1) return;
+              var d = e.data;
+              if (!d) return;
+              if (typeof d === 'string') { try { d = JSON.parse(d); } catch(_) { return; } }
+              var n = (d.name || d.action || d.event || '').toString();
+              if (n === 'readyToClose' || n === 'videoConferenceLeft' || n === 'hangup') {
+                _jitsiClosed = true;
+                console.log('Jitsi: closed event', n);
+                try {
+                  if (_jitsiIframe) { _jitsiIframe.src = 'about:blank'; _jitsiIframe = null; }
+                  var cc = document.getElementById('jitsi-container'); if (cc) cc.innerHTML = '';
+                } catch(_) {}
+                try { window.dispatchEvent(new CustomEvent('jitsiEnded', { detail: { reason: n } })); } catch(_) {}
+              } else if (n === 'participantJoined') {
+                _jitsiRemoteJoined = true;
+                _jitsiRemoteLeft = false;
+                console.log('Jitsi: participant joined');
+              } else if (n === 'participantLeft') {
                 _jitsiRemoteLeft = true;
-                console.log('Jitsi: last remote participant left');
-              } else {
-                console.log('Jitsi: participant left, remaining:', _jitsiParticipantCount);
+                console.log('Jitsi: participant left');
               }
-            });
+            };
+            window.addEventListener('message', _jitsiMsgHandler);
 
-            // Raise Flutter controls above Jitsi iframe after it loads
             setTimeout(window.raiseFlutterLayer, 1200);
-
-            console.log('Jitsi: joining room', roomName, 'as', displayName);
+            console.log('Jitsi: joining room', roomName, 'as', displayName, '(direct iframe)');
             resolve('ok');
           } catch(e) {
             console.error('jitsiJoin error:', e);
             resolve('error:' + (e.message || String(e)));
           }
-        });
+        };
+        checkContainer();
       });
     };
 
     window.jitsiLeave = function() {
       return new Promise(function(resolve) {
         try {
-          if (_jitsiApi) {
-            _jitsiApi.removeAllListeners();
-            _jitsiApi.dispose();
-            _jitsiApi = null;
-          }
-          _jitsiRemoteJoined = false;
-          _jitsiRemoteLeft = false;
-          _jitsiParticipantCount = 1;
-        } catch(e) { console.warn('jitsiLeave error:', e); }
+          if (_jitsiMsgHandler) { window.removeEventListener('message', _jitsiMsgHandler); _jitsiMsgHandler = null; }
+          if (_jitsiIframe) { _jitsiIframe.src = 'about:blank'; _jitsiIframe = null; }
+          var c = document.getElementById('jitsi-container');
+          if (c) c.innerHTML = '';
+        } catch(_) {}
+        _jitsiRemoteJoined = false;
+        _jitsiRemoteLeft = false;
         resolve();
       });
     };
 
-    window.jitsiMuteMic = function(mute) {
-      if (!_jitsiApi) return;
-      try {
-        _jitsiApi.isAudioMuted().then(function(muted) {
-          if (muted !== mute) _jitsiApi.executeCommand('toggleAudio');
-        });
-      } catch(e) { console.warn('jitsiMuteMic error:', e); }
-    };
+    window.jitsiMuteMic = function(mute) { /* Jitsi's own UI controls media */ };
+    window.jitsiMuteCam = function(mute) { /* Jitsi's own UI controls media */ };
 
-    window.jitsiMuteCam = function(mute) {
-      if (!_jitsiApi) return;
-      try {
-        _jitsiApi.isVideoMuted().then(function(muted) {
-          if (muted !== mute) _jitsiApi.executeCommand('toggleVideo');
-        });
-      } catch(e) { console.warn('jitsiMuteCam error:', e); }
-    };
-
-    window.jitsiIsRemoteJoined = function() {
-      if (_jitsiRemoteJoined) return true;
-      try { return (_jitsiApi != null && _jitsiApi.getNumberOfParticipants() > 1); } catch(e) { return false; }
-    };
-
-    window.jitsiIsRemoteLeft = function() {
-      return _jitsiRemoteLeft === true;
-    };
+    window.jitsiIsRemoteJoined = function() { return _jitsiRemoteJoined === true; };
+    window.jitsiIsRemoteLeft   = function() { return _jitsiRemoteLeft === true; };
+    window.jitsiIsClosed       = function() { return _jitsiClosed === true; };
 
     // ── Ringtone (Web Audio API — no external file needed) ─────────────────
     var _ringtoneInterval = null;
@@ -359,13 +273,13 @@
   </script>
   <script src="flutter_bootstrap.js" async></script>
 
-  <!-- LMS Live Session — Jitsi Meet + MediaRecorder -->
+  <!-- LMS Live Session — Jitsi Meet (direct iframe) + MediaRecorder -->
   <script>
-    // ── LMS Jitsi Meet ────────────────────────────────────────────────────
-    var _lmsJitsiApi = null;
-    var _lmsJitsiContainerId = 'lms-jitsi-host-' + Date.now();
+    // ── LMS Jitsi Meet (direct iframe, meet.jit.si) ───────────────────────
+    var _lmsJitsiClosed = false;
+    var _lmsJitsiIframe = null;
+    var _lmsJitsiMsgHandler = null;
 
-    // Raise Flutter glass pane above Jitsi iframe so Flutter buttons work
     window.lmsRaiseFlutterLayer = function() {
       document.querySelectorAll('flt-glass-pane,flt-text-editing-host').forEach(function(el) {
         el.style.zIndex = '99999';
@@ -373,131 +287,81 @@
     };
 
     window.lmsJitsiJoin = function(roomName, displayName, isInstructor) {
-      return new Promise(function(resolve) {
-        window._ensureJitsiScript(function() {
-          try {
-            if (_lmsJitsiApi) {
+      var checkContainer = function(retries) {
+        retries = retries || 0;
+        var container = document.getElementById('lms-jitsi-host');
+        if (!container) {
+          if (retries > 30) { console.warn('lmsJitsiJoin: lms-jitsi-host not found'); return; }
+          setTimeout(function() { checkContainer(retries + 1); }, 300);
+          return;
+        }
+        try {
+          if (_lmsJitsiMsgHandler) { window.removeEventListener('message', _lmsJitsiMsgHandler); _lmsJitsiMsgHandler = null; }
+          if (_lmsJitsiIframe) { try { _lmsJitsiIframe.src = 'about:blank'; } catch(_) {} }
+          container.innerHTML = '';
+          _lmsJitsiClosed = false;
+
+          var hash = [
+            'config.prejoinPageEnabled=false',
+            'config.requireDisplayName=false',
+            'config.disableLobbyMode=true',
+            'config.enableWelcomePage=false',
+            'config.enableClosePage=false',
+            'config.doNotStoreRoom=true',
+            'config.disableDeepLinking=true',
+            'config.disableInviteFunctions=true',
+            'config.hideLobbyButton=true',
+            'config.startWithAudioMuted=false',
+            'config.startWithVideoMuted=false',
+            'userInfo.displayName=' + encodeURIComponent(displayName || (isInstructor ? 'Instructor' : 'Student'))
+          ].join('&');
+
+          var iframe = document.createElement('iframe');
+          iframe.src = 'https://meet.jit.si/' + roomName + '#' + hash;
+          iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
+          iframe.allow = 'camera; microphone; fullscreen; display-capture; autoplay';
+          container.appendChild(iframe);
+          _lmsJitsiIframe = iframe;
+
+          _lmsJitsiMsgHandler = function(e) {
+            if (!e.origin || e.origin.indexOf('jit.si') === -1) return;
+            var d = e.data;
+            if (!d) return;
+            if (typeof d === 'string') { try { d = JSON.parse(d); } catch(_) { return; } }
+            var n = (d.name || d.action || d.event || '').toString();
+              if (n === 'readyToClose' || n === 'videoConferenceLeft' || n === 'hangup') {
+              _lmsJitsiClosed = true;
+              console.log('LMS Jitsi: closed event', n);
               try {
-                _lmsJitsiApi.removeAllListeners();
-                _lmsJitsiApi.dispose();
+                if (_lmsJitsiIframe) { _lmsJitsiIframe.src = 'about:blank'; _lmsJitsiIframe = null; }
+                var cc = document.getElementById('lms-jitsi-host'); if (cc) cc.innerHTML = '';
               } catch(_) {}
-              _lmsJitsiApi = null;
+              try { window.dispatchEvent(new CustomEvent('lmsJitsiEnded', { detail: { reason: n } })); } catch(_) {}
             }
+          };
+          window.addEventListener('message', _lmsJitsiMsgHandler);
 
-            // Create unique container ID
-            _lmsJitsiContainerId = 'lms-jitsi-host-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
-            
-            var container = document.getElementById(_lmsJitsiContainerId);
-            if (!container) {
-              // Try to find existing lms-jitsi-host or create a new one
-              var existing = document.getElementById('lms-jitsi-host');
-              if (existing) {
-                container = existing;
-                container.id = _lmsJitsiContainerId;
-              } else {
-                container = document.createElement('div');
-                container.id = _lmsJitsiContainerId;
-                container.style.width = '100%';
-                container.style.height = '100%';
-                container.style.background = '#1C2333';
-                container.style.position = 'relative';
-                var flutterView = document.querySelector('flt-platform-view');
-                if (flutterView) {
-                  flutterView.appendChild(container);
-                } else {
-                  // Append to a specific area or body
-                  var lmsHost = document.querySelector('[id$="-jitsi-view"]');
-                  if (lmsHost) lmsHost.appendChild(container);
-                  else document.body.appendChild(container);
-                }
-              }
-            }
-
-            _lmsJitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
-              roomName: roomName,
-              width: '100%',
-              height: '100%',
-              parentNode: container,
-              configOverwrite: {
-                startWithAudioMuted: false,
-                startWithVideoMuted: false,
-                disableDeepLinking: true,
-                prejoinPageEnabled: false,
-                enableWelcomePage: false,
-                enableClosePage: false,
-                requireDisplayName: false,
-                doNotStoreRoom: true,
-                disableInviteFunctions: true,
-                disableLobbyMode: true,
-                lobby: { enabled: false, autoKnock: false },
-                enableLobbyChat: false,
-                hideLobbyButton: true,
-              },
-              interfaceConfigOverwrite: {
-                SHOW_JITSI_WATERMARK: false,
-                SHOW_WATERMARK_FOR_GUESTS: false,
-                MOBILE_APP_PROMO: false,
-              },
-              userInfo: { displayName: displayName || (isInstructor ? 'Instructor' : 'Student') }
-            });
-
-            // Auto-admit any participant waiting in the lobby
-            _lmsJitsiApi.addListener('knockingParticipant', function(e) {
-              try { _lmsJitsiApi.executeCommand('answerKnockingParticipant', e.participant.id, true); } catch(_) {}
-            });
-
-            // If instructor: disable lobby right after joining so students join directly
-            if (isInstructor) {
-              _lmsJitsiApi.addListener('videoConferenceJoined', function() {
-                setTimeout(function() {
-                  try { _lmsJitsiApi.executeCommand('toggleLobby', false); } catch(_) {}
-                }, 1000);
-              });
-            }
-
-            console.log('LMS Jitsi: joined room', roomName, isInstructor ? '(instructor)' : '(student)');
-
-            // Raise Flutter layer after Jitsi loads so Flutter buttons remain clickable
-            setTimeout(window.lmsRaiseFlutterLayer, 1200);
-            resolve('ok');
-          } catch(e) {
-            console.error('lmsJitsiJoin error:', e);
-            resolve('error:' + (e.message || String(e)));
-          }
-        });
-      });
+          console.log('LMS Jitsi: joining room', roomName, isInstructor ? '(instructor)' : '(student)', '(direct iframe)');
+          setTimeout(window.lmsRaiseFlutterLayer, 1200);
+        } catch(e) {
+          console.error('lmsJitsiJoin error:', e);
+        }
+      };
+      checkContainer();
     };
 
     window.lmsJitsiLeave = function() {
-      return new Promise(function(resolve) {
-        try {
-          if (_lmsJitsiApi) {
-            _lmsJitsiApi.removeAllListeners();
-            _lmsJitsiApi.dispose();
-            _lmsJitsiApi = null;
-          }
-        } catch(_) {}
-        resolve();
-      });
+      try {
+        if (_lmsJitsiMsgHandler) { window.removeEventListener('message', _lmsJitsiMsgHandler); _lmsJitsiMsgHandler = null; }
+        if (_lmsJitsiIframe) { _lmsJitsiIframe.src = 'about:blank'; _lmsJitsiIframe = null; }
+        var c = document.getElementById('lms-jitsi-host');
+        if (c) c.innerHTML = '';
+      } catch(_) {}
     };
 
-    window.lmsJitsiMuteMic = function(mute) {
-      if (!_lmsJitsiApi) return;
-      try {
-        _lmsJitsiApi.isAudioMuted().then(function(muted) {
-          if (muted !== mute) _lmsJitsiApi.executeCommand('toggleAudio');
-        });
-      } catch(e) { console.warn('lmsJitsiMuteMic error:', e); }
-    };
-
-    window.lmsJitsiMuteCamera = function(mute) {
-      if (!_lmsJitsiApi) return;
-      try {
-        _lmsJitsiApi.isVideoMuted().then(function(muted) {
-          if (muted !== mute) _lmsJitsiApi.executeCommand('toggleVideo');
-        });
-      } catch(e) { console.warn('lmsJitsiMuteCamera error:', e); }
-    };
+    window.lmsJitsiIsClosed   = function() { return _lmsJitsiClosed === true; };
+    window.lmsJitsiMuteMic    = function(mute) { /* Jitsi's own UI controls media */ };
+    window.lmsJitsiMuteCamera = function(mute) { /* Jitsi's own UI controls media */ };
 
     // ── LMS MediaRecorder — session recording (instructor only) ───────────
     window._lmsRecorder = null;

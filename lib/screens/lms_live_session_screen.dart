@@ -75,6 +75,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
   Timer? _sessionTimer;
   Timer? _syncTimer; // polls backend for chat/participants/raised hands
   Timer? _heartbeatTimer; // instructor-only: keeps session alive on backend
+  Timer? _closedPoller; // web: detects Jitsi hangup so this screen can close
   int _sessionSeconds = 0;
 
   final LmsService _lms = LmsService();
@@ -92,6 +93,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     _sessionTimer?.cancel();
     _syncTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _closedPoller?.cancel();
     _chatCtrl.dispose();
     _chatScroll.dispose();
     _panelTab.dispose();
@@ -153,6 +155,9 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
 
       // Step 5: Start polling for real-time sync
       _startSyncPolling();
+
+      // Step 6: Watch for the user pressing Jitsi's hangup button (web)
+      _startClosedPoller();
 
       await _initVideoSession();
     } catch (e) {
@@ -493,6 +498,53 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     });
   }
 
+  /// Web: poll the JS flag set when the user presses Jitsi's own hangup button.
+  /// Jitsi's UI is the only call UI now, so this is how the screen closes.
+  void _startClosedPoller() {
+    if (!kIsWeb) return;
+    _closedPoller = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (lmsIsSessionClosed()) {
+        _closedPoller?.cancel();
+        _finishSession();
+      }
+    });
+  }
+
+  /// Ends/leaves the session on the backend and closes this screen.
+  /// Same as _endSession but without the confirmation dialog (Jitsi already
+  /// confirmed the hangup).
+  Future<void> _finishSession() async {
+    lmsLeaveChannel();
+
+    if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
+      try { await _lms.leaveLiveSession(_sessionDocId); } catch (_) {}
+    }
+
+    if (widget.isInstructor) {
+      if (kIsWeb && _isRecording && _sessionDocId.isNotEmpty) {
+        final token = await SharedPref().getToken();
+        lmsStopRecordingAndUpload(
+          _sessionDocId,
+          'https://icare-backend-inky.vercel.app/api',
+          token ?? '',
+        );
+      }
+      if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
+        try {
+          await _lms.endAndSaveSession(
+            sessionId: _sessionDocId,
+            lessonId: widget.lessonId,
+            moduleId: widget.moduleId,
+          );
+        } catch (_) {}
+      }
+      try { await _lms.setSessionLive(courseId: widget.courseId, isLive: false); } catch (_) {}
+    }
+
+    if (mounted) Navigator.pop(context);
+  }
+
   Future<void> _endSession() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -599,6 +651,15 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
             ],
           ),
         ),
+      );
+    }
+
+    // Web: full-screen Jitsi — Jitsi's own UI provides mic/cam/chat/polls/
+    // raise-hand/hangup, so no custom Flutter bars or overlays are needed.
+    if (kIsWeb && _cameraViewName != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF1C2333),
+        body: SizedBox.expand(child: HtmlElementView(viewType: _cameraViewName!)),
       );
     }
 

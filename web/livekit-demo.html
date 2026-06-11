@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>LiveKit Demo — iCare</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;margin:12px} #videos{display:flex;gap:8px} video{width:320px;height:240px;background:#111}</style>
+  </head>
+  <body>
+    <h3>LiveKit demo (calls /api/livekit/token)</h3>
+    <label>Room: <input id="room" value="icare-test-room"></label>
+    <label>Identity: <input id="identity" value="tester"></label>
+    <button id="join">Join</button>
+    <button id="leave" disabled>Leave</button>
+    <div id="status">idle</div>
+    <div id="videos">
+      <div><div>Local</div><video id="localVideo" autoplay muted playsinline></video></div>
+      <div><div>Remote</div><video id="remoteVideo" autoplay playsinline></video></div>
+    </div>
+
+    <!-- LiveKit UMD (may update to specific version as needed) -->
+    <script src="https://unpkg.com/livekit-client/dist/livekit.min.js"></script>
+    <script>
+      const joinBtn = document.getElementById('join');
+      const leaveBtn = document.getElementById('leave');
+      const statusEl = document.getElementById('status');
+      let room = null;
+
+      async function getToken(roomName, identity) {
+        const res = await fetch('/api/livekit/token', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room: roomName, identity })
+        });
+        return res.json();
+      }
+
+      joinBtn.onclick = async () => {
+        const roomName = document.getElementById('room').value.trim();
+        const identity = document.getElementById('identity').value.trim() || ('u'+Math.floor(Math.random()*1000));
+        statusEl.textContent = 'requesting token...';
+        try {
+          const r = await getToken(roomName, identity);
+          if (!r.success) throw new Error(r.message || 'token error');
+          const token = r.token;
+          const url = r.livekitUrl || (window.location.origin.replace(/^http/, 'wss'));
+          statusEl.textContent = 'connecting to ' + (url || 'livekit');
+
+          // Connect via livekit-client
+          room = await livekit.connect(url || r.livekitUrl || '', token, { autoSubscribe: true });
+          statusEl.textContent = 'connected: ' + room.localParticipant.identity;
+          joinBtn.disabled = true; leaveBtn.disabled = false;
+
+          // Attach local video (if any)
+          const localVid = document.getElementById('localVideo');
+          const localP = room.localParticipant;
+          if (localP && localP.videoTracks && localP.videoTracks.size > 0) {
+            const t = Array.from(localP.videoTracks.values())[0].track;
+            localVid.srcObject = t.mediaStreamTrack ? new MediaStream([t.mediaStreamTrack]) : null;
+          }
+
+          // Subscribe to remote tracks
+          room.on('trackSubscribed', (track, publication, participant) => {
+            if (track.kind === 'video') {
+              const remoteVid = document.getElementById('remoteVideo');
+              remoteVid.srcObject = new MediaStream([track.mediaStreamTrack]);
+            }
+          });
+
+          room.on('participantDisconnected', p => { statusEl.textContent = 'participant left: ' + p.identity; });
+        } catch (e) {
+          console.error(e); statusEl.textContent = 'error: ' + e.message;
+        }
+      };
+
+      leaveBtn.onclick = async () => {
+        try { if (room) await room.disconnect(); } catch(_) {}
+        room = null; statusEl.textContent = 'left'; joinBtn.disabled = false; leaveBtn.disabled = true;
+        document.getElementById('localVideo').srcObject = null; document.getElementById('remoteVideo').srcObject = null;
+      };
+    </script>
+  </body>
+</html>
