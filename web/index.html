@@ -38,8 +38,8 @@
     <img src="icare_logo.png" alt="iCare" style="width:160px;height:160px;object-fit:contain;">
     <div class="spinner"></div>
   </div>
-  <!-- Jitsi Meet External API — using OW2 instance (no moderator-auth enforcement) -->
-  <script src="https://jitsi.ow2.org/external_api.js" defer></script>
+  <!-- Jitsi Meet External API — primary: meet.jit.si, fallback: jitsi.ow2.org -->
+  <script src="https://meet.jit.si/external_api.js" defer></script>
   <script>
     function _hideLoading() {
       var loading = document.getElementById('loading');
@@ -129,7 +129,7 @@
               container = tempContainer;
             }
 
-            _jitsiApi = new JitsiMeetExternalAPI('jitsi.ow2.org', {
+            _jitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
               roomName: roomName,
               width: '100%',
               height: '100%',
@@ -413,7 +413,7 @@
               }
             }
 
-            _lmsJitsiApi = new JitsiMeetExternalAPI('jitsi.ow2.org', {
+            _lmsJitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
               roomName: roomName,
               width: '100%',
               height: '100%',
