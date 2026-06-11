@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:icare/widgets/back_button.dart';
 
 const Color _primary = Color(0xFF0B2D6E);
@@ -15,7 +15,7 @@ class AboutUs extends StatelessWidget {
   }
 }
 
-// ── Mobile ───────────────────────────────────────────────────────────────────
+// â”€â”€ Mobile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _MobileAboutUs extends StatelessWidget {
   const _MobileAboutUs();
@@ -144,7 +144,7 @@ class _MobileAboutUs extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: Image.asset(
-                      'assets/images/doctor_banner2.png',
+                      'assets/images/doctor_banner2.jpg',
                       width: double.infinity,
                       height: 150,
                       fit: BoxFit.cover,
@@ -159,7 +159,7 @@ class _MobileAboutUs extends StatelessWidget {
                   _mobileSection(
                     Icons.rocket_launch_rounded,
                     'Empowering the Future',
-                    'Beyond connecting patients with care, iCare is dedicated to elevating the entire medical industry. We support the next generation of healthcare professionals by introducing advanced clinical insights, fostering leadership, and helping clinicians adapt to a rapidly evolving digital world.\n\nWe aren\'t just adapting to the future of healthcare — we are actively creating it.',
+                    'Beyond connecting patients with care, iCare is dedicated to elevating the entire medical industry. We support the next generation of healthcare professionals by introducing advanced clinical insights, fostering leadership, and helping clinicians adapt to a rapidly evolving digital world.\n\nWe aren\'t just adapting to the future of healthcare â€” we are actively creating it.',
                   ),
                   const SizedBox(height: 24),
 
@@ -250,7 +250,7 @@ class _MobileAboutUs extends StatelessWidget {
   }
 }
 
-// ── Desktop / Web ─────────────────────────────────────────────────────────────
+// â”€â”€ Desktop / Web â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _WebAboutUs extends StatelessWidget {
   const _WebAboutUs();
@@ -279,11 +279,11 @@ class _WebAboutUs extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Hero card ──────────────────────────────────────
+                  // â”€â”€ Hero card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _heroCard(),
                   const SizedBox(height: 32),
 
-                  // ── Intro ──────────────────────────────────────────
+                  // â”€â”€ Intro â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _webSection(
                     icon: Icons.info_outline_rounded,
                     title: 'Welcome to iCare',
@@ -293,7 +293,7 @@ class _WebAboutUs extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Vision ─────────────────────────────────────────
+                  // â”€â”€ Vision â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _webSection(
                     icon: Icons.visibility_rounded,
                     title: 'Our Vision',
@@ -303,21 +303,21 @@ class _WebAboutUs extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Why iCare ─────────────────────────────────────
+                  // â”€â”€ Why iCare â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _whyIcareCard(),
                   const SizedBox(height: 24),
 
-                  // ── Empowering ────────────────────────────────────
+                  // â”€â”€ Empowering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _webSection(
                     icon: Icons.rocket_launch_rounded,
                     title: 'Empowering the Future',
-                    body: 'Beyond connecting patients with care, iCare is dedicated to elevating the entire medical industry. We support the next generation of healthcare professionals by introducing advanced clinical insights, fostering leadership, and helping clinicians adapt to a rapidly evolving digital world.\n\nWe aren\'t just adapting to the future of healthcare — we are actively creating it.',
-                    imagePath: 'assets/images/doctor_banner2.png',
+                    body: 'Beyond connecting patients with care, iCare is dedicated to elevating the entire medical industry. We support the next generation of healthcare professionals by introducing advanced clinical insights, fostering leadership, and helping clinicians adapt to a rapidly evolving digital world.\n\nWe aren\'t just adapting to the future of healthcare â€” we are actively creating it.',
+                    imagePath: 'assets/images/doctor_banner2.jpg',
                     imageRight: false,
                   ),
                   const SizedBox(height: 32),
 
-                  // ── CTA ───────────────────────────────────────────
+                  // â”€â”€ CTA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                   _ctaBanner(),
                   const SizedBox(height: 40),
                 ],
@@ -378,7 +378,7 @@ class _WebAboutUs extends StatelessWidget {
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'A premier digital health ecosystem — built entirely around you.',
+                  'A premier digital health ecosystem â€” built entirely around you.',
                   style: TextStyle(fontSize: 16, color: Colors.white70, height: 1.5),
                 ),
               ],

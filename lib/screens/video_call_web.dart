@@ -22,6 +22,7 @@ import '../utils/shared_pref.dart';
 import '../widgets/rating_dialog.dart';
 
 // JS interop — Jitsi Meet External API
+// jitsiJoin and jitsiLeave now return Promises (handled via JSPromise)
 @JS('jitsiJoin')
 external JSPromise<JSString> _jitsiJoin(JSString room, JSString displayName, JSBoolean audioOnly);
 
@@ -752,7 +753,10 @@ class _VideoCallWebState extends State<VideoCall> {
         container.style.background = '#0A1628';
         container.style.position = 'relative';
 
-        // Jitsi iframe will be embedded inside this div by jitsiJoin()
+        // Use a unique container ID per registration so JS can find it
+        // The JS jitsiJoin dynamically creates containers using IDs like "jitsi-container-{timestamp}"
+        // We match that pattern so JS can find it by scanning for containers on the page
+        // No need to set a fixed id here - JS will create its own container
         final jitsiDiv = web.document.createElement('div') as web.HTMLDivElement;
         jitsiDiv.id = 'jitsi-container';
         jitsiDiv.style.width = '100%';

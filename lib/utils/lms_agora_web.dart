@@ -43,7 +43,8 @@ Widget lmsGetRemoteVideoWidget(int uid, String channelId) => const SizedBox.shri
 /// Register the LMS Jitsi host container as a Flutter platform view.
 /// Creates a single div that lmsJitsiJoin() will embed the Jitsi iframe into.
 String registerLmsVideoView() {
-  const viewId = 'lms-jitsi-view';
+  // Use a unique view ID per registration so multiple sessions don't conflict
+  final viewId = 'lms-jitsi-view-${DateTime.now().millisecondsSinceEpoch}';
   try {
     ui.platformViewRegistry.registerViewFactory(viewId, (int id) {
       final container = web.document.createElement('div') as web.HTMLDivElement;
