@@ -2,8 +2,6 @@
   "version": 2,
   "name": "icareapp-testing",
   "outputDirectory": "build/web",
-  "buildCommand": "flutter build web --release --no-tree-shake-icons",
-  "installCommand": "flutter pub get",
   "headers": [
     {
       "source": "/(.*)\\.wasm",
