@@ -2,11 +2,14 @@
 .dart_tool/
 
 # Android/iOS/desktop platform builds — web only on Vercel
-android/
-ios/
-macos/
-windows/
-linux/
+# NOTE: patterns are anchored with a leading / so they only match ROOT dirs,
+# NOT build/web subfolders (unanchored "assets/" was excluding build/web/assets
+# which broke translations/fonts and caused a blank screen on boot)
+/android/
+/ios/
+/macos/
+/windows/
+/linux/
 
 # Large development assets
 .pub-cache/
@@ -21,16 +24,10 @@ linux/
 # Stray zero-byte file that confuses Vercel Go framework detection
 cmd
 
-# CanvasKit loads from gstatic CDN at runtime — no need to upload ~37MB locally
-build/web/canvaskit/
-
 # Flutter source files — not needed, site is pre-built
-lib/
-test/
-assets/
-pubspec.yaml
-pubspec.lock
-analysis_options.yaml
-linux/
-windows/
-macos/
+/lib/
+/test/
+/assets/
+/pubspec.yaml
+/pubspec.lock
+/analysis_options.yaml
