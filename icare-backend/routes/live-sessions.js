@@ -141,8 +141,12 @@ router.post('/course/:courseId/set-live', authMiddleware, async (req, res) => {
     if (sessionId && sessionId !== req.params.courseId) {
       resultSession = await LiveSession.findByIdAndUpdate(
         toId(sessionId),
-        // Clear stale attendees/waiting/hands/chat from any previous run of this session
-        { status: 'live', attendees: [], waitingStudents: [], raisedHands: [], chatMessages: [] },
+        // Clear stale attendees/waiting/hands/chat from any previous run of this session.
+        // CRITICAL: reset instructorHeartbeat — a stale heartbeat from a previous run
+        // made the /active auto-expire immediately mark the session 'ended', so
+        // students never saw it as live.
+        { status: 'live', attendees: [], waitingStudents: [], raisedHands: [], chatMessages: [],
+          instructorHeartbeat: new Date() },
         { new: true }
       );
     }
@@ -155,6 +159,7 @@ router.post('/course/:courseId/set-live', authMiddleware, async (req, res) => {
         status: 'live',
         title: title || 'Live Session',
         scheduledAt: new Date(),
+        instructorHeartbeat: new Date(),
         attendees: [],
         waitingStudents: [],
         raisedHands: [],
