@@ -94,11 +94,17 @@ router.get('/course/:courseId/active', authMiddleware, async (req, res) => {
         return res.json({ success: true, isLive: false, session: null });
       }
 
-      // Hard cap: 3 hours without any heartbeat at all
-      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
-      if (new Date(session.createdAt) < threeHoursAgo) {
-        await LiveSession.findByIdAndUpdate(session._id, { status: 'ended' });
-        return res.json({ success: true, isLive: false, session: null });
+      // Hard cap: 3 hours with NO heartbeat at all (never received one).
+      // BUG FIX: this used to compare session.createdAt, which broke reused
+      // session documents — an old doc reused for a fresh "go live" (createdAt
+      // from days/hours ago) was immediately re-expired on every /active poll
+      // even with a heartbeat from seconds ago, because createdAt never changes.
+      if (!heartbeat) {
+        const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+        if (new Date(session.createdAt) < threeHoursAgo) {
+          await LiveSession.findByIdAndUpdate(session._id, { status: 'ended' });
+          return res.json({ success: true, isLive: false, session: null });
+        }
       }
     }
 
