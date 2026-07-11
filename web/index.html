@@ -71,6 +71,17 @@
     var _JAAS_BACKEND = 'https://icare-backend-inky.vercel.app/api';
     var _JAAS_APP_ID  = 'vpaas-magic-cookie-5ba8d2685f474ffaa2bec3cd0b79623d';
 
+    // Default Jitsi toolbar minus: invite, closedcaptions, livestreaming, feedback
+    var _JITSI_TOOLBAR_BUTTONS = [
+      'microphone', 'camera', 'desktop', 'embedmeeting',
+      'fullscreen', 'fodeviceselection', 'hangup', 'profile', 'chat',
+      'recording', 'etherpad', 'sharedvideo', 'shareaudio',
+      'settings', 'raisehand', 'videoquality', 'filmstrip',
+      'stats', 'shortcuts', 'tileview', 'videobackgroundblur',
+      'download', 'help', 'mute-everyone', 'security', 'toggle-camera',
+      'select-background', 'noise-suppression', 'whiteboard'
+    ];
+
     // Fetch a short-lived JaaS JWT from the backend (server holds the private key)
     function _fetchJaaSToken(displayName, isModerator) {
       return fetch(_JAAS_BACKEND + '/jaas/token', {
@@ -143,6 +154,7 @@
                       enableClosePage: false,
                       disableDeepLinking: true,
                       disableInviteFunctions: true,
+                      toolbarButtons: _JITSI_TOOLBAR_BUTTONS,
                       startWithAudioMuted: false,
                       startWithVideoMuted: audioOnly === true,
                     },
@@ -357,6 +369,7 @@
                 enableClosePage: false,
                 disableDeepLinking: true,
                 disableInviteFunctions: true,
+                toolbarButtons: _JITSI_TOOLBAR_BUTTONS,
                 startWithAudioMuted: false,
                 startWithVideoMuted: false,
               },
@@ -404,40 +417,90 @@
     window.lmsJitsiMuteMic    = function(mute) { /* Jitsi's own UI controls media */ };
     window.lmsJitsiMuteCamera = function(mute) { /* Jitsi's own UI controls media */ };
 
-    // ── LMS MediaRecorder — session recording (instructor only) ───────────
+    // ── LMS MediaRecorder — records the whole meeting tab (screen capture),
+    // not just the instructor's webcam, so all participant tiles as they
+    // join are visible in the saved recording (instructor only) ───────────
     window._lmsRecorder = null;
     window._lmsChunks = [];
-    window._lmsStream = null;
+    window._lmsStream = null;   // display/tab-capture stream (video + tab audio)
+    window._lmsMicStream = null; // instructor's own mic, mixed in separately
 
     window.lmsStartRecording = async function() {
       try {
         if (window._lmsRecorder && window._lmsRecorder.state === 'recording') return;
 
-        // Request a fresh media stream for recording
-        var stream;
+        var displayStream = null;
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-          window._lmsStream = stream;
+          // Captures the actual Jitsi meeting UI (all participant tiles, names,
+          // mic icons) as rendered in this browser tab. preferCurrentTab/
+          // selfBrowserSurface steer Chrome's picker to "This Tab" by default —
+          // the instructor still confirms once via the native "Share" prompt.
+          displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { displaySurface: 'browser' },
+            audio: true,
+            preferCurrentTab: true,
+            selfBrowserSurface: 'include',
+          });
+          window._lmsStream = displayStream;
         } catch(e) {
+          console.warn('LMS: screen-share permission denied, falling back to camera-only recording:', e.message);
+        }
+
+        // Instructor's own microphone — added as a separate track so their
+        // voice is captured even if tab-audio doesn't route local mic input.
+        var micStream = null;
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          window._lmsMicStream = micStream;
+        } catch(e) {
+          console.warn('LMS: mic unavailable for recording:', e.message);
+        }
+
+        var tracks = [];
+        if (displayStream) {
+          tracks = tracks.concat(displayStream.getVideoTracks());
+          tracks = tracks.concat(displayStream.getAudioTracks()); // other participants' voices
+        } else if (micStream) {
+          // Last-resort fallback: audio-only camera-less recording if the
+          // instructor declined screen sharing entirely.
           try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            window._lmsStream = stream;
-          } catch(audioErr) {
-            console.warn('LMS: no recording stream available:', audioErr.message);
-            return;
-          }
+            var camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            window._lmsStream = camStream;
+            tracks = tracks.concat(camStream.getVideoTracks());
+          } catch(_) {}
+        }
+        if (micStream) tracks = tracks.concat(micStream.getAudioTracks());
+
+        if (tracks.length === 0) {
+          console.warn('LMS: no recording stream available at all');
+          return;
+        }
+
+        var combined = new MediaStream(tracks);
+
+        // If the instructor stops sharing via the browser's native "Stop
+        // sharing" bar, end the recording gracefully instead of leaving a
+        // dangling recorder with no more incoming frames.
+        if (displayStream && displayStream.getVideoTracks()[0]) {
+          displayStream.getVideoTracks()[0].addEventListener('ended', function() {
+            if (window._lmsRecorder && window._lmsRecorder.state === 'recording') {
+              window._lmsRecorder.stop();
+            }
+          });
         }
 
         window._lmsChunks = [];
         var mimeType = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
           .find(function(t) { return MediaRecorder.isTypeSupported(t); }) || 'video/webm';
 
-        window._lmsRecorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 500000 });
+        // Higher bitrate than the old webcam-only recording — screen content
+        // (multiple tiles, names, UI text) needs more detail to stay legible.
+        window._lmsRecorder = new MediaRecorder(combined, { mimeType: mimeType, videoBitsPerSecond: 1500000 });
         window._lmsRecorder.ondataavailable = function(e) {
           if (e.data && e.data.size > 0) window._lmsChunks.push(e.data);
         };
         window._lmsRecorder.start(5000);
-        console.log('LMS: recording started');
+        console.log('LMS: screen recording started');
       } catch(e) {
         console.warn('LMS: recording unavailable:', e.message);
       }
@@ -457,6 +520,10 @@
         if (window._lmsStream) {
           window._lmsStream.getTracks().forEach(function(t) { t.stop(); });
           window._lmsStream = null;
+        }
+        if (window._lmsMicStream) {
+          window._lmsMicStream.getTracks().forEach(function(t) { t.stop(); });
+          window._lmsMicStream = null;
         }
         var blob = new Blob(window._lmsChunks, { type: 'video/webm' });
         window._lmsChunks = [];

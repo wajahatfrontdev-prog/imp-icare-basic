@@ -12,6 +12,7 @@ import 'package:icare/services/lms_service.dart';
 import 'package:icare/screens/lms_live_session_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:icare/widgets/video_player_widget.dart';
 
 // ─────────────────────────────────────────────────────────────
 // Google Classroom-style inside-course view
@@ -1481,6 +1482,40 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
     }
   }
 
+  void _openRecordingPlayer(String title, String recordingUrl) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (_) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Expanded(
+                    child: Text(title,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Center(
+                  child: VideoPlayerWidget(videoUrl: recordingUrl),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showCompletedSessionOptions(String sessionId, String title, String recordingUrl) {
     showModalBottomSheet(
       context: context,
@@ -1512,16 +1547,9 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
                 ),
                 title: const Text('Watch Recording', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                 subtitle: const Text('Full session video recording', style: TextStyle(fontSize: 12)),
-                onTap: () async {
+                onTap: () {
                   Navigator.pop(context);
-                  final uri = Uri.parse(recordingUrl);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  } else if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Cannot open: $recordingUrl'), backgroundColor: Colors.red),
-                    );
-                  }
+                  _openRecordingPlayer(title, recordingUrl);
                 },
               )
             else
@@ -1724,13 +1752,10 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
                 leading: const Icon(Icons.play_circle_filled_rounded, color: Color(0xFF1A73E8)),
                 title: const Text('Watch Recording', style: TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: const Text('Full session video recording'),
-                onTap: () async {
+                onTap: () {
                   Navigator.pop(context);
                   final url = data['recordingUrl']?.toString() ?? '';
-                  final uri = Uri.parse(url);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
+                  _openRecordingPlayer(data['title']?.toString() ?? 'Session Recording', url);
                 },
               ),
             // Session — View Transcript (completed sessions)
