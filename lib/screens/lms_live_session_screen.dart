@@ -99,6 +99,14 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     _chatScroll.dispose();
     _panelTab.dispose();
     LmsLiveSessionScreen.activeCourseId = null; // allow popup again after leaving
+    // Safety net: if the screen closes without going through _finishSession
+    // (e.g. back navigation), still upload the recording so it isn't lost.
+    if (kIsWeb && widget.isInstructor && _isRecording && !_finishing && _sessionDocId.isNotEmpty) {
+      final sid = _sessionDocId;
+      SharedPref().getToken().then((token) {
+        lmsStopRecordingAndUpload(sid, 'https://icare-backend-inky.vercel.app/api', token ?? '');
+      });
+    }
     lmsLeaveChannel();
     super.dispose();
   }

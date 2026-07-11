@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="iCare">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; img-src 'self' data: https: http: blob:; frame-src 'self' https://jitsi.ow2.org https://meet.jit.si https://8x8.vc; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://jitsi.ow2.org https://meet.jit.si https://cdn.jsdelivr.net https://www.gstatic.com https://accounts.google.com; connect-src 'self' https: http: wss: data:; worker-src 'self' blob: https://www.gstatic.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; img-src 'self' data: https: http: blob:; frame-src 'self' https://jitsi.ow2.org https://meet.jit.si https://8x8.vc; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://jitsi.ow2.org https://meet.jit.si https://8x8.vc https://web-cdn.jitsi.net https://cdn.jsdelivr.net https://www.gstatic.com https://accounts.google.com; connect-src 'self' https: http: wss: data:; worker-src 'self' blob: https://www.gstatic.com;">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="icon" type="image/png" href="favicon.png"/>
   <title>iCare</title>
@@ -61,13 +61,12 @@
       });
     };
 
-    // ── Jitsi Meet helpers — Doctor/Patient Consultation (direct iframe) ──
-    // Uses meet.jit.si via plain <iframe> — no External API, no frame-ancestors issue.
+    // ── Jitsi Meet helpers — Doctor/Patient Consultation (JaaS External API) ──
+    // Uses the official external_api.js so hangup/participant events are reliable.
     var _jitsiRemoteJoined = false;
     var _jitsiRemoteLeft = false;
     var _jitsiClosed = false;
-    var _jitsiIframe = null;
-    var _jitsiMsgHandler = null;
+    var _jitsiApi = null;
 
     var _JAAS_BACKEND = 'https://icare-backend-inky.vercel.app/api';
     var _JAAS_APP_ID  = 'vpaas-magic-cookie-5ba8d2685f474ffaa2bec3cd0b79623d';
@@ -85,6 +84,25 @@
       }).then(function(r) { return r.json(); });
     }
 
+    // Load the JaaS external_api.js script once
+    function _loadJitsiApi(appId, cb) {
+      if (window.JitsiMeetExternalAPI) { cb(null); return; }
+      var s = document.createElement('script');
+      s.src = 'https://8x8.vc/' + appId + '/external_api.js';
+      s.onload = function() { cb(null); };
+      s.onerror = function() { cb('external_api.js failed to load'); };
+      document.head.appendChild(s);
+    }
+
+    function _onJitsiClosed(reason) {
+      if (_jitsiClosed) return;
+      _jitsiClosed = true;
+      console.log('JaaS: closed event', reason);
+      try { if (_jitsiApi) { _jitsiApi.dispose(); _jitsiApi = null; } } catch(_) {}
+      try { var cc = document.getElementById('jitsi-container'); if (cc) cc.innerHTML = ''; } catch(_) {}
+      try { window.dispatchEvent(new CustomEvent('jitsiEnded', { detail: { reason: reason } })); } catch(_) {}
+    }
+
     window.jitsiJoin = function(roomName, displayName, audioOnly) {
       return new Promise(function(resolve) {
         var checkContainer = function(retries) {
@@ -95,83 +113,60 @@
             setTimeout(function() { checkContainer(retries + 1); }, 300);
             return;
           }
-          // Fetch JaaS JWT then open the iframe
+          // Fetch JaaS JWT, load external_api.js, then start the meeting
           _fetchJaaSToken(displayName, true)
             .then(function(data) {
               if (!data.success || !data.token) {
                 resolve('error:JaaS token failed: ' + (data.message || 'unknown'));
                 return;
               }
-              try {
-                if (_jitsiMsgHandler) { window.removeEventListener('message', _jitsiMsgHandler); _jitsiMsgHandler = null; }
-                if (_jitsiIframe) { try { _jitsiIframe.src = 'about:blank'; } catch(_) {} }
-                container.innerHTML = '';
-                _jitsiRemoteJoined = false;
-                _jitsiRemoteLeft = false;
-                _jitsiClosed = false;
+              var appId = data.appId || _JAAS_APP_ID;
+              _loadJitsiApi(appId, function(err) {
+                if (err) { resolve('error:' + err); return; }
+                try {
+                  if (_jitsiApi) { try { _jitsiApi.dispose(); } catch(_) {} _jitsiApi = null; }
+                  container.innerHTML = '';
+                  _jitsiRemoteJoined = false;
+                  _jitsiRemoteLeft = false;
+                  _jitsiClosed = false;
 
-                var appId = data.appId || _JAAS_APP_ID;
-                var hash = [
-                  'config.prejoinPageEnabled=false',
-                  'config.requireDisplayName=false',
-                  'config.disableLobbyMode=true',
-                  'config.enableWelcomePage=false',
-                  'config.enableClosePage=false',
-                  'config.doNotStoreRoom=true',
-                  'config.disableDeepLinking=true',
-                  'config.disableInviteFunctions=true',
-                  'config.hideLobbyButton=true',
-                  'config.startWithAudioMuted=false',
-                  'config.startWithVideoMuted=' + (audioOnly === true ? 'true' : 'false'),
-                ].join('&');
-
-                var iframe = document.createElement('iframe');
-                // JaaS URL: https://8x8.vc/{appId}/{room}?jwt={token}#config...
-                // jitsi_meet_external_api_id makes Jitsi emit postMessage events
-                // (video-conference-left etc.) so we can detect hangup and close.
-                iframe.src = 'https://8x8.vc/' + appId + '/' + roomName + '?jwt=' + data.token + '&jitsi_meet_external_api_id=1#' + hash;
-                iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
-                iframe.allow = 'camera; microphone; fullscreen; display-capture; autoplay';
-                container.appendChild(iframe);
-                _jitsiIframe = iframe;
-
-                _jitsiMsgHandler = function(e) {
-                  if (!e.origin) return;
-                  var origin = e.origin;
-                  if (origin.indexOf('jit.si') === -1 && origin.indexOf('8x8.vc') === -1) return;
-                  var d = e.data;
-                  if (!d) return;
-                  if (typeof d === 'string') { try { d = JSON.parse(d); } catch(_) { return; } }
-                  // Jitsi's external-api transport (postis) uses d.method with
-                  // hyphenated names; plain events use d.name/action/event.
-                  var n = (d.name || d.action || d.event || d.method || '').toString();
-                  if (n === 'readyToClose' || n === 'videoConferenceLeft' || n === 'hangup' ||
-                      n === 'video-conference-left' || n === 'video-ready-to-close') {
-                    _jitsiClosed = true;
-                    console.log('JaaS: closed event', n);
-                    try {
-                      if (_jitsiIframe) { _jitsiIframe.src = 'about:blank'; _jitsiIframe = null; }
-                      var cc = document.getElementById('jitsi-container'); if (cc) cc.innerHTML = '';
-                    } catch(_) {}
-                    try { window.dispatchEvent(new CustomEvent('jitsiEnded', { detail: { reason: n } })); } catch(_) {}
-                  } else if (n === 'participantJoined' || n === 'participant-joined') {
-                    _jitsiRemoteJoined = true;
-                    _jitsiRemoteLeft = false;
+                  _jitsiApi = new JitsiMeetExternalAPI('8x8.vc', {
+                    roomName: appId + '/' + roomName,
+                    jwt: data.token,
+                    parentNode: container,
+                    width: '100%',
+                    height: '100%',
+                    configOverwrite: {
+                      prejoinPageEnabled: false,
+                      requireDisplayName: false,
+                      enableWelcomePage: false,
+                      enableClosePage: false,
+                      disableDeepLinking: true,
+                      disableInviteFunctions: true,
+                      startWithAudioMuted: false,
+                      startWithVideoMuted: audioOnly === true,
+                    },
+                    userInfo: { displayName: displayName || 'User' },
+                  });
+                  _jitsiApi.on('videoConferenceLeft', function() { _onJitsiClosed('videoConferenceLeft'); });
+                  _jitsiApi.on('readyToClose',        function() { _onJitsiClosed('readyToClose'); });
+                  _jitsiApi.on('participantJoined',   function() {
+                    _jitsiRemoteJoined = true; _jitsiRemoteLeft = false;
                     console.log('JaaS: participant joined');
-                  } else if (n === 'participantLeft' || n === 'participant-left') {
+                  });
+                  _jitsiApi.on('participantLeft', function() {
                     _jitsiRemoteLeft = true;
                     console.log('JaaS: participant left');
-                  }
-                };
-                window.addEventListener('message', _jitsiMsgHandler);
+                  });
 
-                setTimeout(window.raiseFlutterLayer, 1200);
-                console.log('JaaS: joining room', roomName, 'as', displayName);
-                resolve('ok');
-              } catch(e) {
-                console.error('jitsiJoin error:', e);
-                resolve('error:' + (e.message || String(e)));
-              }
+                  setTimeout(window.raiseFlutterLayer, 1200);
+                  console.log('JaaS: joining room', roomName, 'as', displayName);
+                  resolve('ok');
+                } catch(e) {
+                  console.error('jitsiJoin error:', e);
+                  resolve('error:' + (e.message || String(e)));
+                }
+              });
             })
             .catch(function(e) {
               resolve('error:JaaS fetch failed: ' + (e.message || String(e)));
@@ -183,9 +178,8 @@
 
     window.jitsiLeave = function() {
       return new Promise(function(resolve) {
+        try { if (_jitsiApi) { _jitsiApi.dispose(); _jitsiApi = null; } } catch(_) {}
         try {
-          if (_jitsiMsgHandler) { window.removeEventListener('message', _jitsiMsgHandler); _jitsiMsgHandler = null; }
-          if (_jitsiIframe) { _jitsiIframe.src = 'about:blank'; _jitsiIframe = null; }
           var c = document.getElementById('jitsi-container');
           if (c) c.innerHTML = '';
         } catch(_) {}
@@ -316,16 +310,24 @@
 
   <!-- LMS Live Session — Jitsi Meet (direct iframe) + MediaRecorder -->
   <script>
-    // ── LMS Jitsi Meet (direct iframe, meet.jit.si) ───────────────────────
+    // ── LMS Jitsi Meet (JaaS External API) ────────────────────────────────
     var _lmsJitsiClosed = false;
-    var _lmsJitsiIframe = null;
-    var _lmsJitsiMsgHandler = null;
+    var _lmsJitsiApi = null;
 
     window.lmsRaiseFlutterLayer = function() {
       document.querySelectorAll('flt-glass-pane,flt-text-editing-host').forEach(function(el) {
         el.style.zIndex = '99999';
       });
     };
+
+    function _onLmsJitsiClosed(reason) {
+      if (_lmsJitsiClosed) return;
+      _lmsJitsiClosed = true;
+      console.log('LMS JaaS: closed event', reason);
+      try { if (_lmsJitsiApi) { _lmsJitsiApi.dispose(); _lmsJitsiApi = null; } } catch(_) {}
+      try { var cc = document.getElementById('lms-jitsi-host'); if (cc) cc.innerHTML = ''; } catch(_) {}
+      try { window.dispatchEvent(new CustomEvent('lmsJitsiEnded', { detail: { reason: reason } })); } catch(_) {}
+    }
 
     window.lmsJitsiJoin = function(roomName, displayName, isInstructor) {
       var doJoin = function(jwt, appId) {
@@ -338,54 +340,30 @@
             return;
           }
           try {
-            if (_lmsJitsiMsgHandler) { window.removeEventListener('message', _lmsJitsiMsgHandler); _lmsJitsiMsgHandler = null; }
-            if (_lmsJitsiIframe) { try { _lmsJitsiIframe.src = 'about:blank'; } catch(_) {} }
+            if (_lmsJitsiApi) { try { _lmsJitsiApi.dispose(); } catch(_) {} _lmsJitsiApi = null; }
             container.innerHTML = '';
             _lmsJitsiClosed = false;
 
-            var hash = [
-              'config.prejoinPageEnabled=false',
-              'config.requireDisplayName=false',
-              'config.disableLobbyMode=true',
-              'config.enableWelcomePage=false',
-              'config.enableClosePage=false',
-              'config.doNotStoreRoom=true',
-              'config.disableDeepLinking=true',
-              'config.disableInviteFunctions=true',
-              'config.hideLobbyButton=true',
-              'config.startWithAudioMuted=false',
-              'config.startWithVideoMuted=false',
-            ].join('&');
-
-            var iframe = document.createElement('iframe');
-            // jitsi_meet_external_api_id activates Jitsi's postMessage events
-            // so lmsJitsiIsClosed() works and Flutter can auto-redirect on hangup.
-            iframe.src = 'https://8x8.vc/' + appId + '/' + roomName + '?jwt=' + jwt + '&jitsi_meet_external_api_id=1#' + hash;
-            iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
-            iframe.allow = 'camera; microphone; fullscreen; display-capture; autoplay';
-            container.appendChild(iframe);
-            _lmsJitsiIframe = iframe;
-
-            _lmsJitsiMsgHandler = function(e) {
-              if (!e.origin) return;
-              var origin = e.origin;
-              if (origin.indexOf('jit.si') === -1 && origin.indexOf('8x8.vc') === -1) return;
-              var d = e.data;
-              if (!d) return;
-              if (typeof d === 'string') { try { d = JSON.parse(d); } catch(_) { return; } }
-              var n = (d.name || d.action || d.event || d.method || '').toString();
-              if (n === 'readyToClose' || n === 'videoConferenceLeft' || n === 'hangup' ||
-                  n === 'video-conference-left' || n === 'video-ready-to-close') {
-                _lmsJitsiClosed = true;
-                console.log('LMS JaaS: closed event', n);
-                try {
-                  if (_lmsJitsiIframe) { _lmsJitsiIframe.src = 'about:blank'; _lmsJitsiIframe = null; }
-                  var cc = document.getElementById('lms-jitsi-host'); if (cc) cc.innerHTML = '';
-                } catch(_) {}
-                try { window.dispatchEvent(new CustomEvent('lmsJitsiEnded', { detail: { reason: n } })); } catch(_) {}
-              }
-            };
-            window.addEventListener('message', _lmsJitsiMsgHandler);
+            _lmsJitsiApi = new JitsiMeetExternalAPI('8x8.vc', {
+              roomName: appId + '/' + roomName,
+              jwt: jwt,
+              parentNode: container,
+              width: '100%',
+              height: '100%',
+              configOverwrite: {
+                prejoinPageEnabled: false,
+                requireDisplayName: false,
+                enableWelcomePage: false,
+                enableClosePage: false,
+                disableDeepLinking: true,
+                disableInviteFunctions: true,
+                startWithAudioMuted: false,
+                startWithVideoMuted: false,
+              },
+              userInfo: { displayName: displayName || (isInstructor ? 'Instructor' : 'Student') },
+            });
+            _lmsJitsiApi.on('videoConferenceLeft', function() { _onLmsJitsiClosed('videoConferenceLeft'); });
+            _lmsJitsiApi.on('readyToClose',        function() { _onLmsJitsiClosed('readyToClose'); });
 
             console.log('LMS JaaS: joining room', roomName, isInstructor ? '(instructor)' : '(student)');
             setTimeout(window.lmsRaiseFlutterLayer, 1200);
@@ -396,14 +374,18 @@
         checkContainer();
       };
 
-      // Fetch JaaS JWT then open the LMS iframe
+      // Fetch JaaS JWT + load external_api.js, then start the meeting
       _fetchJaaSToken(displayName || (isInstructor ? 'Instructor' : 'Student'), !!isInstructor)
         .then(function(data) {
           if (!data.success || !data.token) {
             console.error('LMS JaaS token failed:', data.message);
             return;
           }
-          doJoin(data.token, data.appId || _JAAS_APP_ID);
+          var appId = data.appId || _JAAS_APP_ID;
+          _loadJitsiApi(appId, function(err) {
+            if (err) { console.error('LMS JaaS:', err); return; }
+            doJoin(data.token, appId);
+          });
         })
         .catch(function(e) {
           console.error('LMS JaaS fetch failed:', e.message);
@@ -411,9 +393,8 @@
     };
 
     window.lmsJitsiLeave = function() {
+      try { if (_lmsJitsiApi) { _lmsJitsiApi.dispose(); _lmsJitsiApi = null; } } catch(_) {}
       try {
-        if (_lmsJitsiMsgHandler) { window.removeEventListener('message', _lmsJitsiMsgHandler); _lmsJitsiMsgHandler = null; }
-        if (_lmsJitsiIframe) { _lmsJitsiIframe.src = 'about:blank'; _lmsJitsiIframe = null; }
         var c = document.getElementById('lms-jitsi-host');
         if (c) c.innerHTML = '';
       } catch(_) {}
