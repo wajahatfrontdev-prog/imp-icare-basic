@@ -385,19 +385,41 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
   String? _cameraViewName;
 
   Future<void> _notifyStudents() async {
-    try {
-      // Mark session as LIVE — backend returns the fresh session ID (may differ from widget.sessionId
-      // if widget.sessionId was a courseId placeholder or a stale session).
-      final freshSessionId = await _lms.setSessionLive(
-        courseId: widget.courseId,
-        isLive: true,
-        title: widget.sessionTitle,
-        sessionId: _sessionDocId.isNotEmpty && _sessionDocId != widget.courseId ? _sessionDocId : null,
-      );
-      // Update _sessionDocId so Agora room name and join/sync use the real session
-      if (freshSessionId != null && freshSessionId.isNotEmpty) {
-        _sessionDocId = freshSessionId;
+    // Mark session as LIVE — retry up to 3 times because a cold backend/DB can
+    // silently fail; without this students never see the session as live.
+    String? freshSessionId;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        freshSessionId = await _lms.setSessionLive(
+          courseId: widget.courseId,
+          isLive: true,
+          title: widget.sessionTitle,
+          sessionId: _sessionDocId.isNotEmpty && _sessionDocId != widget.courseId ? _sessionDocId : null,
+        );
+        if (freshSessionId != null && freshSessionId.isNotEmpty) break;
+      } catch (e) {
+        debugPrint('setSessionLive attempt ${attempt + 1} failed: $e');
       }
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    if (freshSessionId != null && freshSessionId.isNotEmpty) {
+      _sessionDocId = freshSessionId;
+      debugPrint('✅ Session marked LIVE: $_sessionDocId');
+    } else {
+      debugPrint('❌ Could not mark session live — students will not see it!');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Warning: could not notify students — session may not appear as live. Check your connection.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 6),
+          ),
+        );
+      }
+    }
+
+    try {
       await _lms.startLiveSessionNotify(
         courseId: widget.courseId,
         sessionId: _sessionDocId,
@@ -550,6 +572,11 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     _syncTimer?.cancel();
     _sessionTimer?.cancel();
     _closedPoller?.cancel();
+    _heartbeatTimer?.cancel();
+
+    // Show "saving" overlay instead of the (now dead) Jitsi iframe
+    if (mounted) setState(() {});
+
     lmsLeaveChannel();
 
     if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
@@ -564,6 +591,13 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
           'https://icare-backend-inky.vercel.app/api',
           token ?? '',
         );
+        // Wait for the Cloudinary upload to finish (up to 2 minutes) —
+        // navigating away earlier would kill the upload and lose the video.
+        for (int i = 0; i < 120; i++) {
+          final state = lmsUploadState();
+          if (state == 'done' || state == 'error') break;
+          await Future.delayed(const Duration(seconds: 1));
+        }
       }
       if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
         try {
@@ -577,7 +611,13 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       try { await _lms.setSessionLive(courseId: widget.courseId, isLive: false); } catch (_) {}
     }
 
-    if (mounted) context.go('/dashboard');
+    // Hard reload on web: SPA navigation after disposing the Jitsi platform
+    // view leaves the page blank/stuck. A full reload guarantees clean state.
+    if (kIsWeb) {
+      lmsHardRedirect('/dashboard');
+    } else if (mounted) {
+      context.go('/dashboard');
+    }
   }
 
   Future<void> _endSession() async {
@@ -599,51 +639,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       ),
     );
     if (confirm == true && mounted) {
-      lmsLeaveChannel();
-
-      // Remove self from session attendees on backend so participant count stays accurate
-      if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
-        await _lms.leaveLiveSession(_sessionDocId);
-      }
-
-      if (widget.isInstructor) {
-        // Stop recording + save to device (auto-download) + upload if Cloudinary configured
-        if (kIsWeb && _isRecording && _sessionDocId.isNotEmpty) {
-          final token = await SharedPref().getToken();
-          lmsStopRecordingAndUpload(
-            _sessionDocId,
-            'https://icare-backend-inky.vercel.app/api',
-            token ?? '',
-          );
-        }
-
-        // Auto-save: end session + save chat transcript to lesson
-        if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
-          final result = await _lms.endAndSaveSession(
-            sessionId: _sessionDocId,
-            lessonId: widget.lessonId,
-            moduleId: widget.moduleId,
-          );
-          if (mounted && result['success'] == true) {
-            final msg = widget.lessonId != null
-                ? 'Session saved and linked to lesson.'
-                : 'Session ended. Chat transcript saved.';
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(children: [
-                  const Icon(Icons.save_rounded, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(msg)),
-                ]),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-        await _lms.setSessionLive(courseId: widget.courseId, isLive: false);
-      }
-      if (mounted) context.go('/dashboard');
+      await _finishSession();
     }
   }
 
@@ -683,6 +679,36 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Go Back'),
               ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Session ending: show a saving screen while the recording uploads and
+    // backend calls finish. A hard redirect to /dashboard follows.
+    if (_finishing) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF1C2333),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(color: Colors.white),
+              const SizedBox(height: 20),
+              Text(
+                widget.isInstructor && _isRecording
+                    ? 'Saving session recording...'
+                    : 'Leaving session...',
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              if (widget.isInstructor && _isRecording) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Please wait — do not close this tab',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ],
             ],
           ),
         ),

@@ -50,6 +50,12 @@ void lmsStopRecordingAndUpload(String sessionId, String backendUrl, String authT
 Future<void> lmsEnableMediaAndPublish() async {}
 bool lmsIsSessionClosed() => false;
 
+/// Mobile: no browser recording, nothing to wait for.
+String lmsUploadState() => 'done';
+
+/// Mobile: no hard reload concept — caller falls back to normal navigation.
+void lmsHardRedirect(String path) {}
+
 String registerLmsVideoView() => '';
 Widget lmsGetLocalVideoWidget(String? viewName) => const SizedBox.shrink();
 Widget lmsGetRemoteVideoWidget(int uid, String channelId) => const SizedBox.shrink();

@@ -25,6 +25,9 @@ external void _lmsStopRecordingAndUploadJS(JSString sessionId, JSString backendU
 @JS('lmsJitsiIsClosed')
 external JSBoolean _lmsJitsiIsClosedJS();
 
+@JS('lmsUploadState')
+external JSString _lmsUploadStateJS();
+
 // displayName replaces appId+token — Jitsi needs no token for public rooms
 Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor) async {
   _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS);
@@ -46,6 +49,22 @@ bool lmsIsSessionClosed() {
   } catch (_) {
     return false;
   }
+}
+
+/// Recording upload state: 'idle' | 'uploading' | 'done' | 'error'
+String lmsUploadState() {
+  try {
+    return _lmsUploadStateJS().toDart;
+  } catch (_) {
+    return 'done';
+  }
+}
+
+/// Full page navigation — clears all Jitsi/recorder/platform-view state.
+/// SPA navigation after a Jitsi session leaves broken platform views behind
+/// (blank screen + MutationObserver errors), so we hard-reload instead.
+void lmsHardRedirect(String path) {
+  web.window.location.assign(path);
 }
 
 void lmsSetCallbacks({void Function(int, bool)? onRemote, void Function()? onJoined}) {}

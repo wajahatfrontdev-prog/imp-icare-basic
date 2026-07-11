@@ -443,9 +443,15 @@
       }
     };
 
+    // Upload state so Flutter can wait for the recording to save before
+    // leaving the page: 'idle' | 'uploading' | 'done' | 'error'
+    window._lmsUploadState = 'idle';
+    window.lmsUploadState = function() { return window._lmsUploadState; };
+
     // Stop recording → upload to Cloudinary → save URL in LMS
     window.lmsStopRecordingAndUpload = function(sessionId, backendUrl, authToken) {
-      if (!window._lmsRecorder) return;
+      if (!window._lmsRecorder) { window._lmsUploadState = 'done'; return; }
+      window._lmsUploadState = 'uploading';
 
       var doSave = async function() {
         if (window._lmsStream) {
@@ -455,7 +461,11 @@
         var blob = new Blob(window._lmsChunks, { type: 'video/webm' });
         window._lmsChunks = [];
 
-        if (blob.size < 5000) { console.log('LMS: recording too short, skipping save'); return; }
+        if (blob.size < 5000) {
+          console.log('LMS: recording too short, skipping save');
+          window._lmsUploadState = 'done';
+          return;
+        }
 
         var sizeMB = (blob.size / 1048576).toFixed(1);
         console.log('LMS: uploading session recording (' + sizeMB + ' MB)...');
@@ -469,6 +479,7 @@
 
           if (!sign.success || !sign.cloud_name) {
             console.warn('LMS: could not get Cloudinary signature:', sign);
+            window._lmsUploadState = 'error';
             return;
           }
 
@@ -487,6 +498,7 @@
 
           if (!data.secure_url) {
             console.warn('LMS: Cloudinary upload error:', data.error || data);
+            window._lmsUploadState = 'error';
             return;
           }
 
@@ -496,11 +508,13 @@
             body: JSON.stringify({ recordingUrl: data.secure_url }),
           });
           console.log('LMS: recording saved:', data.secure_url);
+          window._lmsUploadState = 'done';
           if (window._lmsRecordingSavedCallback) {
             try { window._lmsRecordingSavedCallback(data.secure_url); } catch(_) {}
           }
         } catch(e) {
           console.warn('LMS: upload failed:', e.message);
+          window._lmsUploadState = 'error';
         }
       };
 
