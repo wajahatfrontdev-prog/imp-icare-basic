@@ -2,7 +2,11 @@
 import 'dart:html' as html;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:ui_web' as ui_web;
+import 'dart:js_interop';
 import 'package:flutter/material.dart';
+
+@JS('raiseFlutterLayer')
+external void _raiseFlutterLayer();
 
 class VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
@@ -30,6 +34,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void initState() {
     super.initState();
     _viewType = 'video-${widget.videoUrl.hashCode}-${DateTime.now().microsecondsSinceEpoch}';
+
+    // Flutter's glass pane sits above native HtmlElementView content by
+    // default and intercepts pointer drags meant for the <video> element's
+    // native scrubber — playback continues normally (looks like the seek
+    // bar "moves on its own"), but drag-to-seek silently does nothing
+    // because the mousedown/mousemove sequence never reaches the video.
+    // Raising the glass pane's z-index (same trick used for the Jitsi
+    // iframe) lets native video controls receive events properly.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      try { _raiseFlutterLayer(); } catch (_) {}
+    });
+
     ui_web.platformViewRegistry.registerViewFactory(_viewType, (int id) {
       if (_isDirectVideo(widget.videoUrl)) {
         // HTML5 native video player for Cloudinary/direct URLs

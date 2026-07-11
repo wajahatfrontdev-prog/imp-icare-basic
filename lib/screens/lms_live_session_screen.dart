@@ -720,11 +720,39 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     }
 
     // Web: full-screen Jitsi — Jitsi's own UI provides mic/cam/chat/polls/
-    // raise-hand/hangup, so no custom Flutter bars or overlays are needed.
+    // raise-hand/hangup, so no custom Flutter bars are needed. A small "REC"
+    // badge is overlaid so recording status is visible inside the meeting
+    // itself, rather than only via the browser's native screen-share bar.
     if (kIsWeb && _cameraViewName != null) {
       return Scaffold(
         backgroundColor: const Color(0xFF1C2333),
-        body: SizedBox.expand(child: HtmlElementView(viewType: _cameraViewName!)),
+        body: Stack(
+          children: [
+            SizedBox.expand(child: HtmlElementView(viewType: _cameraViewName!)),
+            if (_isRecording)
+              Positioned(
+                top: 12,
+                left: 12,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Container(
+                        width: 8, height: 8,
+                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('REC', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ),
+              ),
+          ],
+        ),
       );
     }
 
