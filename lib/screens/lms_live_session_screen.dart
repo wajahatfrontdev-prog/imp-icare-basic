@@ -205,6 +205,18 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       final session = data['session'];
       if (session == null || !mounted) return;
 
+      // Student: if the instructor ended the session, leave automatically.
+      // The 15s guard avoids kicking a student who joined a moment before
+      // the instructor's isLive flag propagated.
+      if (!widget.isInstructor) {
+        final ended = session['status'] == 'ended' ||
+            (session['isLive'] == false && _sessionSeconds > 15);
+        if (ended) {
+          _finishSession();
+          return;
+        }
+      }
+
       // Update participants from attendees
       final attendees = (session['attendees'] as List?) ?? [];
       final newParticipants = attendees.map<Map<String, dynamic>>((a) => {
@@ -347,10 +359,14 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
         });
       });
 
-      // Auto-show recording indicator for instructor (recording starts in JS after 3s)
+      // Auto-start recording for instructor once Jitsi has had time to join.
+      // Recording is saved to the course lesson when the session ends.
       if (widget.isInstructor) {
         Future.delayed(const Duration(seconds: 4), () {
-          if (mounted) setState(() => _isRecording = true);
+          if (mounted) {
+            lmsStartRecording();
+            setState(() => _isRecording = true);
+          }
         });
       }
     } catch (e) {
@@ -417,7 +433,10 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
 
   void _startSessionTimer() {
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _sessionSeconds++);
+      _sessionSeconds++;
+      // Web fullscreen shows only the Jitsi iframe (no timer UI) — skip setState
+      // so HtmlElementView isn't rebuilt every second (causes jank on mobile).
+      if (mounted && !(kIsWeb && _cameraViewName != null)) setState(() {});
     });
     // Instructor heartbeat — tells backend the session is still active
     if (widget.isInstructor && _sessionDocId.isNotEmpty) {
@@ -515,7 +534,14 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
   /// Ends/leaves the session on the backend and closes this screen.
   /// Same as _endSession but without the confirmation dialog (Jitsi already
   /// confirmed the hangup).
+  bool _finishing = false;
+
   Future<void> _finishSession() async {
+    if (_finishing) return; // sync poll + closed poller can both trigger this
+    _finishing = true;
+    _syncTimer?.cancel();
+    _sessionTimer?.cancel();
+    _closedPoller?.cancel();
     lmsLeaveChannel();
 
     if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
