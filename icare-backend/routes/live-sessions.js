@@ -78,13 +78,17 @@ router.get('/course/:courseId/active', authMiddleware, async (req, res) => {
     }).lean();
 
     if (session) {
-      // Auto-expire: no instructor heartbeat for 90s means instructor left without ending
-      const ninetySecsAgo = new Date(Date.now() - 90 * 1000);
+      // Auto-expire: no instructor heartbeat for 5 minutes means instructor left
+      // without ending. 90s was too aggressive — backgrounded/inactive browser
+      // tabs throttle JS timers (Chrome can delay a 30s interval past 90s), which
+      // was marking sessions 'ended' while the instructor was still connected,
+      // and there was no way back once that happened.
+      const staleThreshold = new Date(Date.now() - 5 * 60 * 1000);
       const heartbeat = session.instructorHeartbeat;
       const sessionAge = Date.now() - new Date(session.createdAt).getTime();
       // Grace period: first 60s after creation, heartbeat may not have arrived yet
       const pastGracePeriod = sessionAge > 60 * 1000;
-      if (pastGracePeriod && heartbeat && new Date(heartbeat) < ninetySecsAgo) {
+      if (pastGracePeriod && heartbeat && new Date(heartbeat) < staleThreshold) {
         await LiveSession.findByIdAndUpdate(session._id, { status: 'ended' });
         console.log(`Auto-expired stale session ${session._id} (last heartbeat: ${heartbeat})`);
         return res.json({ success: true, isLive: false, session: null });
@@ -104,13 +108,17 @@ router.get('/course/:courseId/active', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /live-sessions/:id/heartbeat — instructor pings every 30s while in session
+// POST /live-sessions/:id/heartbeat — instructor pings every 15s while in session.
+// Self-healing: a fresh heartbeat from the instructor means they are still
+// connected, so also flip status back to 'live' if a race with /active's
+// auto-expire had marked it 'ended' moments earlier.
 router.post('/:id/heartbeat', authMiddleware, async (req, res) => {
   try {
     await connectMongoDB();
-    await LiveSession.findByIdAndUpdate(toId(req.params.id), {
-      instructorHeartbeat: new Date(),
-    });
+    await LiveSession.findOneAndUpdate(
+      { _id: toId(req.params.id), status: { $ne: 'completed' } },
+      { instructorHeartbeat: new Date(), status: 'live' },
+    );
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false });

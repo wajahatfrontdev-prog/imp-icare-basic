@@ -468,11 +468,15 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       // so HtmlElementView isn't rebuilt every second (causes jank on mobile).
       if (mounted && !(kIsWeb && _cameraViewName != null)) setState(() {});
     });
-    // Instructor heartbeat — tells backend the session is still active
+    // Instructor heartbeat — tells backend the session is still active.
+    // 15s (not 30s) gives more margin against browser tab-throttling of
+    // Timer.periodic when the instructor's tab is backgrounded — a slow
+    // heartbeat previously caused the backend to mark live sessions 'ended'
+    // while the instructor was still connected.
     if (widget.isInstructor && _sessionDocId.isNotEmpty) {
       _lms.sendHeartbeat(_sessionDocId); // send immediately
-      _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        if (mounted && _sessionDocId.isNotEmpty) _lms.sendHeartbeat(_sessionDocId);
+      _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (_sessionDocId.isNotEmpty) _lms.sendHeartbeat(_sessionDocId);
       });
     }
   }
