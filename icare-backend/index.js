@@ -21,7 +21,7 @@ const invoicesRoutes = require('./routes/invoices');
 const usersRoutes = require('./routes/users');
 const agoraRoutes = require('./routes/agora');
 const livekitRoutes = require('./routes/livekit');
-const jaasRoutes    = require('./routes/jaas');
+// jaasRoutes removed — switched from JaaS/8x8.vc to public meet.jit.si (no JWT needed)
 const callRoutes = require('./routes/call');
 const connectNowRoutes = require('./routes/connect-now');
 const instructorsRoutes = require('./routes/instructors');
@@ -155,7 +155,6 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/invoices', invoicesRoutes);
 app.use('/api/agora', agoraRoutes);
 app.use('/api/livekit', livekitRoutes);
-app.use('/api/jaas',   jaasRoutes);
 app.use('/api/call', callRoutes);
 app.use('/api/connect-now', connectNowRoutes);
 app.use('/api/instructors', instructorsRoutes);
