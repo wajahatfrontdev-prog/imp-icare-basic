@@ -35,4 +35,9 @@ router.post('/token', (req, res) => {
   }
 });
 
+// GET /api/livekit/ping - quick health check to verify route is deployed
+router.get('/ping', (req, res) => {
+  res.json({ success: true, message: 'livekit route is present' });
+});
+
 module.exports = router;

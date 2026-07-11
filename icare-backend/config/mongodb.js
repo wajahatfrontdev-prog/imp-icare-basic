@@ -20,13 +20,13 @@ const connectMongoDB = async () => {
   }
   try {
     await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 4000,
+      serverSelectionTimeoutMS: 4000,  // fail fast — triggers Atlas wake; retry handles the rest
       connectTimeoutMS: 4000,
-      socketTimeoutMS: 8000,
+      socketTimeoutMS: 10000,
       maxPoolSize: 10,
       minPoolSize: 1,
-      maxIdleTimeMS: 10000,
-      waitQueueTimeoutMS: 4000, // fail fast if pool is full
+      maxIdleTimeMS: 300000,           // keep connections open 5 min (matches cron interval)
+      waitQueueTimeoutMS: 4000,
     });
     console.log('✅ MongoDB connected');
   } catch (err) {

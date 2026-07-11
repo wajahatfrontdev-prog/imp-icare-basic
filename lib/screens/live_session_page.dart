@@ -232,12 +232,12 @@ class _LiveSessionPageState extends State<LiveSessionPage> with SingleTickerProv
             Icon(Icons.videocam_off_rounded, size: 64, color: Colors.white54),
             SizedBox(height: 16),
             Text(
-              'Video integration with Agora SDK',
+              'Video call is active in full-screen',
               style: TextStyle(color: Colors.white70, fontSize: 14),
             ),
             SizedBox(height: 8),
             Text(
-              'Connect your Agora credentials to enable video',
+              'Use the buttons below to control mic & camera',
               style: TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ],

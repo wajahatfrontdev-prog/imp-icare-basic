@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_size_matters/flutter_size_matters.dart';
@@ -6,7 +7,7 @@ import 'package:icare/navigators/app_router.dart';
 import 'package:icare/utils/theme.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:responsive_framework/responsive_framework.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, PlatformDispatcher;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:icare/services/fcm_service.dart';
 import 'package:icare/widgets/incoming_call_listener.dart';
@@ -15,6 +16,24 @@ import 'package:icare/widgets/appointment_reminder_listener.dart';
 import 'package:icare/widgets/reminder_banner_listener.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:http/http.dart' as http;
+import 'package:icare/services/api_config.dart';
+
+// Fire-and-forget: wake MongoDB before the user hits any API.
+// Retries 4 times with 5s gaps — Atlas M0 can take ~20s to wake up.
+void _warmUpBackend() {
+  Future(() async {
+    for (int i = 0; i < 4; i++) {
+      try {
+        final r = await http
+            .get(Uri.parse('${ApiConfig.baseUrl}/ping'))
+            .timeout(const Duration(seconds: 8));
+        if (r.statusCode == 200) return;
+      } catch (_) {}
+      await Future.delayed(const Duration(seconds: 5));
+    }
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +46,25 @@ void main() async {
     await Firebase.initializeApp();
     await FcmService().init();
   }
+
+  // Last-resort catch for any HTML-parse error that escapes interceptors.
+  // Uses string matching because Dart's `is FormatException` may not work
+  // correctly for errors thrown inside JavaScript promise chains on web.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    final msg = error.toString();
+    if (msg.contains('Unexpected token') ||
+        msg.contains('<!doctype') ||
+        msg.contains('<!DOCTYPE') ||
+        msg.contains('SyntaxError')) {
+      debugPrint('Suppressed cold-start HTML error: $msg');
+      return true; // handled — don't crash the app
+    }
+    return false; // let real errors propagate
+  };
+
+  // Wake MongoDB before user interacts with any screen.
+  if (kIsWeb) _warmUpBackend();
+
   runApp(
     EasyLocalization(
       supportedLocales: const [Locale('en'), Locale('ur')],

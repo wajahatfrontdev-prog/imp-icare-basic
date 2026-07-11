@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
 import 'package:icare/services/lms_service.dart';
 import 'package:icare/utils/shared_pref.dart';
 import 'package:icare/utils/theme.dart';
@@ -542,7 +543,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       try { await _lms.setSessionLive(courseId: widget.courseId, isLive: false); } catch (_) {}
     }
 
-    if (mounted) Navigator.pop(context);
+    if (mounted) context.go('/dashboard');
   }
 
   Future<void> _endSession() async {
@@ -608,7 +609,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
         }
         await _lms.setSessionLive(courseId: widget.courseId, isLive: false);
       }
-      Navigator.pop(context);
+      if (mounted) context.go('/dashboard');
     }
   }
 

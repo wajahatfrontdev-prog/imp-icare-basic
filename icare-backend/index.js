@@ -21,6 +21,7 @@ const invoicesRoutes = require('./routes/invoices');
 const usersRoutes = require('./routes/users');
 const agoraRoutes = require('./routes/agora');
 const livekitRoutes = require('./routes/livekit');
+const jaasRoutes    = require('./routes/jaas');
 const callRoutes = require('./routes/call');
 const connectNowRoutes = require('./routes/connect-now');
 const instructorsRoutes = require('./routes/instructors');
@@ -102,6 +103,36 @@ app.get('/api', (req, res) => {
   });
 });
 
+// MongoDB warm-up ping — no auth, touches DB to wake Atlas from sleep
+const { connectMongoDB: _pingConnect } = require('./config/mongodb');
+app.get('/api/ping', async (req, res) => {
+  try {
+    await _pingConnect();
+    res.json({ success: true, ts: new Date().toISOString() });
+  } catch (e) {
+    // Return 503 so callers know to retry
+    res.status(503).json({ success: false, message: 'DB waking up, retry in 5s' });
+  }
+});
+
+// Ensure MongoDB is connected before any authenticated route.
+// Returns JSON 503 (never HTML) when Atlas is cold-starting.
+// This prevents Flutter's Dio from ever receiving an HTML error page.
+app.use(async (req, res, next) => {
+  const skip = req.path === '/' || req.path === '/api' || req.path === '/api/ping';
+  if (skip) return next();
+  try {
+    await _pingConnect();
+    next();
+  } catch (err) {
+    console.error('DB cold-start on', req.path, ':', err.message);
+    return res.status(503).json({
+      success: false,
+      message: 'Server is starting up. Please retry in a few seconds.',
+    });
+  }
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/database', databaseRoutes);
@@ -124,6 +155,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/invoices', invoicesRoutes);
 app.use('/api/agora', agoraRoutes);
 app.use('/api/livekit', livekitRoutes);
+app.use('/api/jaas',   jaasRoutes);
 app.use('/api/call', callRoutes);
 app.use('/api/connect-now', connectNowRoutes);
 app.use('/api/instructors', instructorsRoutes);

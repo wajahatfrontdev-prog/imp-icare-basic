@@ -7,7 +7,7 @@ import 'package:icare/widgets/back_button.dart';
 import 'package:icare/screens/lesson_detail_page.dart';
 import 'package:icare/screens/certificate_page.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:icare/widgets/video_player_widget.dart';
 
 class LmsCoursePage extends StatefulWidget {
   final Map<String, dynamic> course;
@@ -1459,17 +1459,12 @@ class _RecordingsTabState extends State<_RecordingsTab> {
     }
   }
 
-  Future<void> _openVideo(String url) async {
-    if (kIsWeb) {
-      // Open in new browser tab on web
-      final uri = Uri.tryParse(url);
-      if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      final uri = Uri.tryParse(url);
-      if (uri != null && await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    }
+  void _openVideo(String url, String title) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (_) => _VideoPlayerDialog(url: url, title: title),
+    );
   }
 
   String _formatDuration(dynamic seconds) {
@@ -1512,35 +1507,45 @@ class _RecordingsTabState extends State<_RecordingsTab> {
           return Card(
             elevation: 1,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              leading: Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E40AF).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => _openVideo(url, title),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52, height: 52,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E40AF).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF1E40AF), size: 30),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          if (date.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(date, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                          ],
+                          if (dur.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Row(children: [
+                              Icon(Icons.timer_outlined, size: 12, color: Colors.grey[400]),
+                              const SizedBox(width: 3),
+                              Text(dur, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                            ]),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, color: Color(0xFF1E40AF)),
+                  ],
                 ),
-                child: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF1E40AF), size: 28),
-              ),
-              title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (date.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(date, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-                  ],
-                  if (dur.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text('Duration: $dur', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-                  ],
-                ],
-              ),
-              trailing: TextButton.icon(
-                onPressed: () => _openVideo(url),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('Watch'),
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFF1E40AF)),
               ),
             ),
           );
@@ -1565,6 +1570,72 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 12),
         Text(text, style: TextStyle(fontSize: 14, color: Colors.grey[400]), textAlign: TextAlign.center),
       ]),
+    );
+  }
+}
+
+// ─── IN-APP VIDEO PLAYER DIALOG ──────────────────────────────────────────────
+class _VideoPlayerDialog extends StatelessWidget {
+  final String url;
+  final String title;
+  const _VideoPlayerDialog({required this.url, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header bar
+          Container(
+            color: const Color(0xFF1C2333),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.play_circle_outline, color: Colors.white70, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+          // Video player — 16:9 ratio, full width
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: VideoPlayerWidget(videoUrl: url),
+          ),
+          // Hint
+          Container(
+            color: const Color(0xFF1C2333),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, size: 14, color: Colors.white38),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Use the player controls to pause, seek, or adjust volume.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -33,24 +33,61 @@ class ApiService {
       ),
     );
 
-    // Guard against HTML responses (e.g. Vercel catch-all returning index.html
-    // when a route is misconfigured). Dio tries to parse JSON before our code
-    // can inspect the body, causing an uncaught FormatException on startup.
+    // Guard against cold-start responses (MongoDB sleeping → Vercel returns HTML 504
+    // or our middleware returns JSON 503). Use resolve() NOT reject() so callers
+    // always get {'success': false} and never receive an uncaught DioException.
     _dio.interceptors.add(InterceptorsWrapper(
       onResponse: (response, handler) {
         final data = response.data;
+        // HTML page = Vercel/proxy timeout (no Express involved yet)
         if (data is String && data.trimLeft().startsWith('<!')) {
-          return handler.reject(
-            DioException(
-              requestOptions: response.requestOptions,
-              response: response,
-              type: DioExceptionType.badResponse,
-              error: 'Server returned HTML instead of JSON. '
-                  'URL: ${response.requestOptions.uri}',
-            ),
-          );
+          debugPrint('HTML response intercepted: ${response.requestOptions.uri}');
+          return handler.resolve(Response(
+            requestOptions: response.requestOptions,
+            data: <String, dynamic>{'success': false, 'message': 'Server temporarily unavailable'},
+            statusCode: 200,
+          ));
+        }
+        // 5xx = our JSON middleware saying DB is cold — resolve instead of letting
+        // Dio validate the status and throw a DioException callers won't catch.
+        final status = response.statusCode ?? 200;
+        if (status == 503 || status == 502 || status == 504) {
+          debugPrint('$status intercepted: ${response.requestOptions.uri}');
+          return handler.resolve(Response(
+            requestOptions: response.requestOptions,
+            data: <String, dynamic>{'success': false, 'message': 'Server temporarily unavailable'},
+            statusCode: 200,
+          ));
         }
         return handler.next(response);
+      },
+      onError: (DioException error, ErrorInterceptorHandler handler) {
+        // Catch FormatException: HTML string passed to jsonDecode
+        final err = error.error;
+        final msg = err?.toString() ?? '';
+        if (err is FormatException ||
+            msg.contains('SyntaxError') ||
+            msg.contains('Unexpected token') ||
+            msg.contains('<!doctype') ||
+            msg.contains('<!DOCTYPE')) {
+          debugPrint('HTML/FormatException intercepted: ${error.requestOptions.uri}');
+          return handler.resolve(Response(
+            requestOptions: error.requestOptions,
+            data: <String, dynamic>{'success': false, 'message': 'Server temporarily unavailable'},
+            statusCode: 200,
+          ));
+        }
+        // Catch 5xx DioExceptions (status-validated after onResponse)
+        final statusCode = error.response?.statusCode ?? 0;
+        if (statusCode == 503 || statusCode == 502 || statusCode == 504) {
+          debugPrint('DioException $statusCode intercepted: ${error.requestOptions.uri}');
+          return handler.resolve(Response(
+            requestOptions: error.requestOptions,
+            data: <String, dynamic>{'success': false, 'message': 'Server temporarily unavailable'},
+            statusCode: 200,
+          ));
+        }
+        return handler.next(error);
       },
     ));
   }

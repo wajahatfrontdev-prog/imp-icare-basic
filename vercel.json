@@ -12,6 +12,27 @@
       ]
     },
     {
+      "source": "/share-modal.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/flutter_bootstrap.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/flutter_service_worker.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
       "source": "/(.*)\\.js",
       "headers": [
         { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
@@ -31,6 +52,13 @@
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; img-src 'self' data: https: http: blob:; frame-src 'self' https://jitsi.ow2.org https://meet.jit.si https://8x8.vc; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://jitsi.ow2.org https://meet.jit.si https://8x8.vc https://cdn.jsdelivr.net https://www.gstatic.com https://accounts.google.com; connect-src 'self' https: http: wss: data:; worker-src 'self' blob: https://www.gstatic.com;" }
       ]
     },
     {
