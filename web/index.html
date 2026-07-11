@@ -72,9 +72,9 @@
     var _JAAS_APP_ID  = 'vpaas-magic-cookie-5ba8d2685f474ffaa2bec3cd0b79623d';
 
     // Default Jitsi toolbar minus: invite, closedcaptions, livestreaming,
-    // feedback, whiteboard (Jitsi's whiteboard is shared/collaborative with
-    // no private-to-instructor option, so it's removed entirely rather than
-    // risk exposing instructor scratch notes to students).
+    // feedback. Whiteboard stays — it's a live shared/collaborative canvas
+    // by design, so anything the instructor or a student draws is already
+    // broadcast to everyone else in the room automatically.
     var _JITSI_TOOLBAR_BUTTONS = [
       'microphone', 'camera', 'desktop', 'embedmeeting',
       'fullscreen', 'fodeviceselection', 'hangup', 'profile', 'chat',
@@ -82,7 +82,7 @@
       'settings', 'raisehand', 'videoquality', 'filmstrip',
       'stats', 'shortcuts', 'tileview', 'videobackgroundblur',
       'download', 'help', 'mute-everyone', 'security', 'toggle-camera',
-      'select-background', 'noise-suppression'
+      'select-background', 'noise-suppression', 'whiteboard'
     ];
 
     // Fetch a short-lived JaaS JWT from the backend (server holds the private key)
