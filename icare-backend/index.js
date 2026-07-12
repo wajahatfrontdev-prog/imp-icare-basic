@@ -158,6 +158,7 @@ app.use('/api/livekit', livekitRoutes);
 app.use('/api/call', callRoutes);
 app.use('/api/connect-now', connectNowRoutes);
 app.use('/api/instructors', instructorsRoutes);
+app.use('/api/jitsi', require('./routes/jitsi-token'));
 app.use('/api/course-questions', courseQuestionsRoutes);
 
 // Stub routes — return empty success so Flutter doesn't crash on 404

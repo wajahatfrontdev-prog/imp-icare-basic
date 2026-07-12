@@ -5,6 +5,29 @@ class LmsService {
   final ApiService _api = ApiService();
 
   // ═══════════════════════════════════════════════════════════════════════
+  // JITSI JWT — moderator status is decided server-side (never trust the
+  // client), so students can never grant themselves moderator by mistake.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Future<String?> getJitsiToken({
+    required String room,
+    String? sessionId,
+    String? displayName,
+  }) async {
+    try {
+      final response = await _api.post('/jitsi/token', {
+        'room': room,
+        if (sessionId != null) 'sessionId': sessionId,
+        if (displayName != null) 'displayName': displayName,
+      });
+      return response.data['token']?.toString();
+    } catch (e) {
+      debugPrint('getJitsiToken error: $e');
+      return null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   // VERIFICATION
   // ═══════════════════════════════════════════════════════════════════════
 

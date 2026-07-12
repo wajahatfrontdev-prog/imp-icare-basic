@@ -9,7 +9,7 @@ void lmsSetCallbacks({void Function(int, bool)? onRemote, void Function()? onJoi
   _onJoined = onJoined;
 }
 
-Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor) async {
+Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = ''}) async {
   try {
     _jitsiMeet.addListener(JitsiMeetEventListener(
       conferenceJoined: (url) { _onJoined?.call(); },
@@ -19,6 +19,7 @@ Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstruct
     final options = JitsiMeetConferenceOptions(
       serverURL: 'https://167-99-65-120.nip.io',
       room: roomName,
+      token: jwt.isNotEmpty ? jwt : null,
       configOverrides: {
         'startWithAudioMuted': false,
         'startWithVideoMuted': false,

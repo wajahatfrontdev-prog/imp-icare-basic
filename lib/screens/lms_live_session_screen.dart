@@ -321,11 +321,20 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       // the 'icare' prefix and recover the exact MongoDB _id losslessly.
       final roomName = 'icare${sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}';
 
-      // Join Jitsi after the platform view is in the DOM (no token needed)
+      // Fetch a JWT that only grants moderator if the backend verifies this
+      // user is really the session's instructor — never trust the client's
+      // own isInstructor flag for that, or a student could self-promote.
+      final jwt = await _lms.getJitsiToken(
+        room: roomName,
+        sessionId: _sessionDocId.isNotEmpty ? _sessionDocId : null,
+        displayName: _currentUserName,
+      );
+
+      // Join Jitsi after the platform view is in the DOM
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         Future.delayed(const Duration(milliseconds: 400), () {
           try {
-            lmsJoinChannel(roomName, _currentUserName, widget.isInstructor);
+            lmsJoinChannel(roomName, _currentUserName, widget.isInstructor, jwt: jwt ?? '');
             debugPrint('LMS Jitsi join: room=$roomName');
           } catch (e) {
             debugPrint('LMS Jitsi join error: $e');
@@ -406,7 +415,12 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
 
     final sessionRoom = _sessionDocId.isNotEmpty ? _sessionDocId : widget.sessionId;
     final roomName = 'icare${sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}';
-    await lmsJoinChannel(roomName, _currentUserName, widget.isInstructor);
+    final jwt = await _lms.getJitsiToken(
+      room: roomName,
+      sessionId: _sessionDocId.isNotEmpty ? _sessionDocId : null,
+      displayName: _currentUserName,
+    );
+    await lmsJoinChannel(roomName, _currentUserName, widget.isInstructor, jwt: jwt ?? '');
 
     // Fallback: mark joined after 2s
     await Future.delayed(const Duration(seconds: 2));

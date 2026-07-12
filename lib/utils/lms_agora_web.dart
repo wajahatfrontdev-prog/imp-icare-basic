@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:web/web.dart' as web;
 
 @JS('lmsJitsiJoin')
-external void _lmsJitsiJoinJS(JSString roomName, JSString displayName, JSBoolean isInstructor);
+external void _lmsJitsiJoinJS(JSString roomName, JSString displayName, JSBoolean isInstructor, JSString jwt);
 
 @JS('lmsJitsiLeave')
 external void _lmsJitsiLeaveJS();
@@ -19,9 +19,8 @@ external void _lmsJitsiMuteCameraJS(JSBoolean mute);
 @JS('lmsJitsiIsClosed')
 external JSBoolean _lmsJitsiIsClosedJS();
 
-// displayName replaces appId+token — Jitsi needs no token for public rooms
-Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor) async {
-  _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS);
+Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = ''}) async {
+  _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS, jwt.toJS);
 }
 
 void lmsLeaveChannel() => _lmsJitsiLeaveJS();
