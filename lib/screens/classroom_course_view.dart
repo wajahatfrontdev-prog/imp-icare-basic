@@ -1460,11 +1460,20 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
       final sessionId = data['_id']?.toString() ?? widget.course['_id']?.toString() ?? '';
       final sessionTitle = data['title']?.toString() ?? 'Live Session';
       final status = data['status']?.toString() ?? '';
-      final recordingUrl = data['recordingUrl']?.toString() ?? '';
+      // Multiple Jibri start/stop segments show up here; fall back to the
+      // legacy single recordingUrl field for older sessions.
+      final recordingsRaw = data['recordings'] as List? ?? [];
+      final recordingUrls = recordingsRaw
+          .map((r) => (r is Map ? r['url'] : null)?.toString() ?? '')
+          .where((u) => u.isNotEmpty)
+          .toList();
+      if (recordingUrls.isEmpty && (data['recordingUrl']?.toString() ?? '').isNotEmpty) {
+        recordingUrls.add(data['recordingUrl'].toString());
+      }
 
       // Completed sessions → show recording + transcript options
       if (!widget.isInstructor && (status == 'completed' || status == 'ended')) {
-        _showCompletedSessionOptions(sessionId, sessionTitle, recordingUrl);
+        _showCompletedSessionOptions(sessionId, sessionTitle, recordingUrls);
         return;
       }
 
@@ -1516,7 +1525,7 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
     );
   }
 
-  void _showCompletedSessionOptions(String sessionId, String title, String recordingUrl) {
+  void _showCompletedSessionOptions(String sessionId, String title, List<String> recordingUrls) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1538,20 +1547,23 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
             ),
             const SizedBox(height: 4),
             const Divider(),
-            if (recordingUrl.isNotEmpty)
-              ListTile(
+            if (recordingUrls.isNotEmpty)
+              ...recordingUrls.asMap().entries.map((entry) => ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: const Color(0xFFE8F0FE), shape: BoxShape.circle),
                   child: const Icon(Icons.play_circle_filled_rounded, color: Color(0xFF1A73E8), size: 22),
                 ),
-                title: const Text('Watch Recording', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                subtitle: const Text('Full session video recording', style: TextStyle(fontSize: 12)),
+                title: Text(
+                  recordingUrls.length > 1 ? 'Watch Recording (Part ${entry.key + 1})' : 'Watch Recording',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                subtitle: const Text('Session video recording', style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(context);
-                  _openRecordingPlayer(title, recordingUrl);
+                  _openRecordingPlayer(title, entry.value);
                 },
-              )
+              ))
             else
               ListTile(
                 leading: Container(
@@ -1744,18 +1756,30 @@ class _ClassroomCourseViewState extends State<ClassroomCourseView>
                   ));
                 },
               ),
-            // Session — Watch Recording (completed sessions with recording)
+            // Session — Watch Recording(s) (completed sessions with recording)
             if (type == 'session' &&
                 (data['status'] == 'completed' || data['status'] == 'ended') &&
-                (data['recordingUrl']?.toString() ?? '').isNotEmpty)
+                (((data['recordings'] as List?)?.isNotEmpty ?? false) ||
+                    (data['recordingUrl']?.toString() ?? '').isNotEmpty))
               ListTile(
                 leading: const Icon(Icons.play_circle_filled_rounded, color: Color(0xFF1A73E8)),
                 title: const Text('Watch Recording', style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text('Full session video recording'),
+                subtitle: const Text('Session video recording(s)'),
                 onTap: () {
                   Navigator.pop(context);
-                  final url = data['recordingUrl']?.toString() ?? '';
-                  _openRecordingPlayer(data['title']?.toString() ?? 'Session Recording', url);
+                  final recordingsRaw = data['recordings'] as List? ?? [];
+                  final urls = recordingsRaw
+                      .map((r) => (r is Map ? r['url'] : null)?.toString() ?? '')
+                      .where((u) => u.isNotEmpty)
+                      .toList();
+                  if (urls.isEmpty && (data['recordingUrl']?.toString() ?? '').isNotEmpty) {
+                    urls.add(data['recordingUrl'].toString());
+                  }
+                  _showCompletedSessionOptions(
+                    data['_id']?.toString() ?? '',
+                    data['title']?.toString() ?? 'Session Recording',
+                    urls,
+                  );
                 },
               ),
             // Session — View Transcript (completed sessions)
