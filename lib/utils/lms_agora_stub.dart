@@ -43,6 +43,7 @@ Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstruct
 }
 
 void lmsLeaveChannel() { try { _jitsiMeet.hangUp(); } catch (_) {} }
+void lmsStopRecording() {} // no server-side recording flow wired up for mobile yet
 void lmsMuteMic(bool mute) {}
 void lmsMuteCamera(bool mute) {}
 void lmsSetPanelWidth(bool open) {}

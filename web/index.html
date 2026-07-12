@@ -118,7 +118,7 @@
       try { window.dispatchEvent(new CustomEvent('jitsiEnded', { detail: { reason: reason } })); } catch(_) {}
     }
 
-    window.jitsiJoin = function(roomName, displayName, audioOnly) {
+    window.jitsiJoin = function(roomName, displayName, audioOnly, jwt) {
       return new Promise(function(resolve) {
         var checkContainer = function(retries) {
           retries = retries || 0;
@@ -139,6 +139,7 @@
 
               _jitsiApi = new JitsiMeetExternalAPI(_JITSI_DOMAIN, {
                 roomName: roomName,
+                jwt: jwt || undefined,
                 parentNode: container,
                 width: '100%',
                 height: '100%',
@@ -155,6 +156,9 @@
                   filmstrip: { disableResizable: false },
                   startWithAudioMuted: false,
                   startWithVideoMuted: audioOnly === true,
+                  // Server now requires JWT auth for every room — without
+                  // this flag Jitsi ignores the JWT's moderator claim.
+                  enableUserRolesBasedOnToken: true,
                 },
                 interfaceConfigOverwrite: _JITSI_INTERFACE_OVERWRITE,
                 userInfo: { displayName: displayName || 'User' },
@@ -367,6 +371,11 @@
               filmstrip: { disableResizable: false },
               startWithAudioMuted: false,
               startWithVideoMuted: false,
+              // Without this, Jitsi ignores our JWT's moderator claim and
+              // falls back to "first participant to join is moderator" —
+              // which let a student who joined before the instructor
+              // become moderator.
+              enableUserRolesBasedOnToken: true,
             },
             interfaceConfigOverwrite: _JITSI_INTERFACE_OVERWRITE,
             userInfo: { displayName: displayName || (isInstructor ? 'Instructor' : 'Student') },
@@ -409,6 +418,21 @@
         var c = document.getElementById('lms-jitsi-host');
         if (c) c.innerHTML = '';
       } catch(_) {}
+    };
+
+    // Jibri only finalizes + uploads a recording once it receives an
+    // explicit stop command — disposing the Jitsi iframe (what
+    // lmsJitsiLeave does) does NOT stop Jibri, it just keeps recording
+    // forever server-side with nothing ever reaching Classwork. Call this
+    // BEFORE lmsJitsiLeave whenever the instructor ends a session.
+    window.lmsStopRecording = function() {
+      if (!_lmsJitsiApi) return;
+      try {
+        _lmsJitsiApi.executeCommand('stopRecording', 'file');
+        console.log('LMS Jitsi: sent stopRecording command');
+      } catch(e) {
+        console.warn('LMS Jitsi: stopRecording failed:', e.message);
+      }
     };
 
     window.lmsJitsiIsClosed   = function() { return _lmsJitsiClosed === true; };

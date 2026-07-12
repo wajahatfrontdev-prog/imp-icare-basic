@@ -550,6 +550,16 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     // Show "saving" overlay instead of the (now dead) Jitsi iframe
     if (mounted) setState(() {});
 
+    if (kIsWeb && widget.isInstructor) {
+      // Jibri only finalizes + uploads once it gets an explicit stop
+      // command — disposing the Jitsi iframe (lmsLeaveChannel, below) does
+      // NOT stop it, it just keeps recording forever server-side with
+      // nothing ever reaching Classwork. Send stop and give it a moment to
+      // actually reach Jibri over XMPP before tearing down the connection.
+      lmsStopRecording();
+      await Future.delayed(const Duration(seconds: 2));
+    }
+
     lmsLeaveChannel();
 
     if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
@@ -557,9 +567,6 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     }
 
     if (widget.isInstructor) {
-      // Recording is handled entirely server-side by Jibri now — it
-      // auto-stops when the conference ends and uploads to LMS via its own
-      // finalize script, independent of this client's lifecycle.
       if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
         try {
           await _lms.endAndSaveSession(
@@ -647,20 +654,20 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     }
 
     // Session ending: brief transition screen before the hard redirect to
-    // /dashboard. Recording (if any) is handled entirely server-side by
-    // Jibri, so there's nothing to wait for here.
+    // /dashboard. For the instructor, this covers the short wait while the
+    // stop-recording command reaches Jibri server-side.
     if (_finishing) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF1C2333),
+      return Scaffold(
+        backgroundColor: const Color(0xFF1C2333),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(color: Colors.white),
-              SizedBox(height: 20),
+              const CircularProgressIndicator(color: Colors.white),
+              const SizedBox(height: 20),
               Text(
-                'Leaving session...',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                kIsWeb && widget.isInstructor ? 'Saving recording...' : 'Leaving session...',
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ],
           ),

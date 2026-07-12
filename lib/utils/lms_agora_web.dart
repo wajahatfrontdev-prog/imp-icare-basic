@@ -19,11 +19,22 @@ external void _lmsJitsiMuteCameraJS(JSBoolean mute);
 @JS('lmsJitsiIsClosed')
 external JSBoolean _lmsJitsiIsClosedJS();
 
+@JS('lmsStopRecording')
+external void _lmsStopRecordingJS();
+
 Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = ''}) async {
   _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS, jwt.toJS);
 }
 
 void lmsLeaveChannel() => _lmsJitsiLeaveJS();
+
+/// Sends Jibri an explicit stop-recording command. Must be called BEFORE
+/// lmsLeaveChannel/dispose — Jibri only finalizes + uploads a recording on
+/// receiving this; simply disposing the Jitsi iframe leaves it recording
+/// forever server-side with nothing ever reaching Classwork.
+void lmsStopRecording() {
+  try { _lmsStopRecordingJS(); } catch (_) {}
+}
 void lmsMuteMic(bool mute) => _lmsJitsiMuteMicJS(mute.toJS);
 void lmsMuteCamera(bool mute) => _lmsJitsiMuteCameraJS(mute.toJS);
 void lmsSetPanelWidth(bool panelOpen) {}

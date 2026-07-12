@@ -24,7 +24,7 @@ import '../widgets/rating_dialog.dart';
 // JS interop — Jitsi Meet External API
 // jitsiJoin and jitsiLeave now return Promises (handled via JSPromise)
 @JS('jitsiJoin')
-external JSPromise<JSString> _jitsiJoin(JSString room, JSString displayName, JSBoolean audioOnly);
+external JSPromise<JSString> _jitsiJoin(JSString room, JSString displayName, JSBoolean audioOnly, JSString jwt);
 
 @JS('jitsiLeave')
 external JSPromise<JSAny?> _jitsiLeave();
@@ -781,6 +781,16 @@ class _VideoCallWebState extends State<VideoCall> {
     } catch (_) {}
   }
 
+  Future<String?> _fetchJitsiToken(String room) async {
+    try {
+      final response = await ApiService().post('/jitsi/token', {'room': room});
+      return response.data['token']?.toString();
+    } catch (e) {
+      debugPrint('Jitsi token fetch error: $e');
+      return null;
+    }
+  }
+
   Future<void> _joinCall() async {
     try {
       // Jitsi room name: alphanumeric only, prefixed with 'icare'
@@ -788,10 +798,15 @@ class _VideoCallWebState extends State<VideoCall> {
       final roomName = 'icare${raw.substring(0, raw.length.clamp(0, 50))}';
       final displayName = widget.currentUserName.isNotEmpty ? widget.currentUserName : 'User';
 
+      // Moderator status is decided server-side (doctor = moderator, patient
+      // = not) so a patient can never end up moderator just by joining first.
+      final jwt = await _fetchJitsiToken(roomName);
+
       final result = await _jitsiJoin(
         roomName.toJS,
         displayName.toJS,
         widget.isAudioOnly.toJS,
+        (jwt ?? '').toJS,
       ).toDart;
 
       final resultStr = result.toDart;
