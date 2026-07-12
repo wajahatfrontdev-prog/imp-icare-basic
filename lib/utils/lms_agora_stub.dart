@@ -9,7 +9,7 @@ void lmsSetCallbacks({void Function(int, bool)? onRemote, void Function()? onJoi
   _onJoined = onJoined;
 }
 
-Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = ''}) async {
+Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = '', String subject = ''}) async {
   try {
     _jitsiMeet.addListener(JitsiMeetEventListener(
       conferenceJoined: (url) { _onJoined?.call(); },
@@ -26,6 +26,7 @@ Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstruct
         'prejoinPageEnabled': false,
         'disableDeepLinking': true,
         'requireDisplayName': false,
+        if (subject.isNotEmpty) 'subject': subject,
       },
       featureFlags: {
         'unsaferoomwarning.enabled': false,

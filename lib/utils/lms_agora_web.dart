@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:web/web.dart' as web;
 
 @JS('lmsJitsiJoin')
-external void _lmsJitsiJoinJS(JSString roomName, JSString displayName, JSBoolean isInstructor, JSString jwt);
+external void _lmsJitsiJoinJS(JSString roomName, JSString displayName, JSBoolean isInstructor, JSString jwt, JSString subject);
 
 @JS('lmsJitsiLeave')
 external void _lmsJitsiLeaveJS();
@@ -22,8 +22,8 @@ external JSBoolean _lmsJitsiIsClosedJS();
 @JS('lmsStopRecording')
 external void _lmsStopRecordingJS();
 
-Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = ''}) async {
-  _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS, jwt.toJS);
+Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor, {String jwt = '', String subject = ''}) async {
+  _lmsJitsiJoinJS(roomName.toJS, displayName.toJS, isInstructor.toJS, jwt.toJS, subject.toJS);
 }
 
 void lmsLeaveChannel() => _lmsJitsiLeaveJS();

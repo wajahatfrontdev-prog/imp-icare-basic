@@ -334,7 +334,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         Future.delayed(const Duration(milliseconds: 400), () {
           try {
-            lmsJoinChannel(roomName, _currentUserName, widget.isInstructor, jwt: jwt ?? '');
+            lmsJoinChannel(roomName, _currentUserName, widget.isInstructor, jwt: jwt ?? '', subject: widget.sessionTitle);
             debugPrint('LMS Jitsi join: room=$roomName');
           } catch (e) {
             debugPrint('LMS Jitsi join error: $e');
@@ -420,7 +420,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       sessionId: _sessionDocId.isNotEmpty ? _sessionDocId : null,
       displayName: _currentUserName,
     );
-    await lmsJoinChannel(roomName, _currentUserName, widget.isInstructor, jwt: jwt ?? '');
+    await lmsJoinChannel(roomName, _currentUserName, widget.isInstructor, jwt: jwt ?? '', subject: widget.sessionTitle);
 
     // Fallback: mark joined after 2s
     await Future.delayed(const Duration(seconds: 2));
