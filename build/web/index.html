@@ -9,7 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="iCare">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; img-src 'self' data: https: http: blob:; frame-src 'self' https://meet.jit.si; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://meet.jit.si https://web-cdn.jitsi.net https://cdn.jsdelivr.net https://www.gstatic.com https://accounts.google.com; connect-src 'self' https: http: wss: data:; worker-src 'self' blob: https://www.gstatic.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; img-src 'self' data: https: http: blob:; frame-src 'self' https://167-99-65-120.nip.io; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://167-99-65-120.nip.io https://cdn.jsdelivr.net https://www.gstatic.com https://accounts.google.com; connect-src 'self' https: http: wss: data:; worker-src 'self' blob: https://www.gstatic.com;">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="icon" type="image/png" href="favicon.png"/>
   <title>iCare</title>
@@ -61,10 +61,13 @@
       });
     };
 
-    // ── Jitsi Meet helpers — Doctor/Patient Consultation (public meet.jit.si) ──
+    // ── Jitsi Meet helpers — Doctor/Patient Consultation (self-hosted Jitsi) ──
     // Uses the official external_api.js so hangup/participant events are reliable.
-    // No JaaS/8x8 account, no JWT, no backend token call, no meeting-length
-    // limit — meet.jit.si is Jitsi's free public server with no enforced cap.
+    // Self-hosted on our own DigitalOcean droplet — no JaaS/8x8 account, no JWT,
+    // no meeting-length cap, no moderator login wall (unlike meet.jit.si's
+    // public server, which requires an account to become moderator), and full
+    // control over branding via server-side interface_config.js.
+    var _JITSI_DOMAIN = '167-99-65-120.nip.io';
     var _jitsiRemoteJoined = false;
     var _jitsiRemoteLeft = false;
     var _jitsiClosed = false;
@@ -84,8 +87,8 @@
       'select-background', 'noise-suppression', 'whiteboard'
     ];
 
-    // Best-effort branding removal — meet.jit.si may or may not honor all of
-    // these (it's a shared free server, not a white-labelled deployment).
+    // Branding removal — our own server, so this is fully honored (not a
+    // best-effort shared-server workaround anymore).
     var _JITSI_INTERFACE_OVERWRITE = {
       SHOW_JITSI_WATERMARK: false,
       SHOW_WATERMARK_FOR_GUESTS: false,
@@ -96,11 +99,11 @@
       MOBILE_APP_PROMO: false,
     };
 
-    // Load meet.jit.si's external_api.js script once
+    // Load our self-hosted server's external_api.js script once
     function _loadJitsiApi(cb) {
       if (window.JitsiMeetExternalAPI) { cb(null); return; }
       var s = document.createElement('script');
-      s.src = 'https://meet.jit.si/external_api.js';
+      s.src = 'https://' + _JITSI_DOMAIN + '/external_api.js';
       s.onload = function() { cb(null); };
       s.onerror = function() { cb('external_api.js failed to load'); };
       document.head.appendChild(s);
@@ -134,7 +137,7 @@
               _jitsiRemoteLeft = false;
               _jitsiClosed = false;
 
-              _jitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
+              _jitsiApi = new JitsiMeetExternalAPI(_JITSI_DOMAIN, {
                 roomName: roomName,
                 parentNode: container,
                 width: '100%',
@@ -347,7 +350,7 @@
           container.innerHTML = '';
           _lmsJitsiClosed = false;
 
-          _lmsJitsiApi = new JitsiMeetExternalAPI('meet.jit.si', {
+          _lmsJitsiApi = new JitsiMeetExternalAPI(_JITSI_DOMAIN, {
             roomName: roomName,
             parentNode: container,
             width: '100%',
