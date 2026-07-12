@@ -933,8 +933,9 @@ router.get('/:id/transcript', authMiddleware, async (req, res) => {
 // start/stop segments within one class all show up in Classwork.
 router.post('/jibri-recording-complete', jibriUpload.single('file'), async (req, res) => {
   try {
-    const secret = req.headers['x-jibri-secret'];
-    if (!secret || secret !== process.env.JIBRI_UPLOAD_SECRET) {
+    const secret = (req.headers['x-jibri-secret'] || '').trim();
+    const expected = (process.env.JIBRI_UPLOAD_SECRET || '').trim();
+    if (!secret || !expected || secret !== expected) {
       return res.status(401).json({ success: false, message: 'Invalid or missing secret' });
     }
     if (!req.file) {

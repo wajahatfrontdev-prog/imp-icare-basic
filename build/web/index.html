@@ -373,6 +373,22 @@
           _lmsJitsiApi.on('videoConferenceLeft', function() { _onLmsJitsiClosed('videoConferenceLeft'); });
           _lmsJitsiApi.on('readyToClose',        function() { _onLmsJitsiClosed('readyToClose'); });
 
+          // Auto-start Jibri (server-side) recording for the instructor as
+          // soon as they've actually joined — same effect as clicking
+          // Jitsi's own "recording" button, just automatic. No local
+          // getUserMedia/getDisplayMedia prompt involved; Jibri joins as a
+          // separate headless participant and records server-side.
+          if (isInstructor) {
+            _lmsJitsiApi.on('videoConferenceJoined', function() {
+              try {
+                _lmsJitsiApi.executeCommand('startRecording', { mode: 'file' });
+                console.log('LMS Jitsi: auto-starting Jibri recording');
+              } catch(e) {
+                console.warn('LMS Jitsi: could not auto-start recording:', e.message);
+              }
+            });
+          }
+
           console.log('LMS Jitsi: joining room', roomName, isInstructor ? '(instructor)' : '(student)');
           setTimeout(window.lmsRaiseFlutterLayer, 1200);
         } catch(e) {
