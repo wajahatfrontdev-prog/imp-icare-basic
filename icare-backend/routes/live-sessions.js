@@ -1,10 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const multer = require('multer');
 const { connectMongoDB } = require('../config/mongodb');
 const { authMiddleware } = require('../middleware/auth');
 const LiveSession = require('../models/LiveSession');
 const Enrollment = require('../models/Enrollment');
+const cloudinary = require('../config/cloudinary');
+
+// Jibri (self-hosted Jitsi's server-side recorder) uploads finished
+// recordings here directly from the droplet — no browser/user JWT exists
+// for that call, so it authenticates with a shared secret instead.
+const jibriUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
 
 function toId(id) {
   try { return new mongoose.Types.ObjectId(id); } catch { return null; }
@@ -914,6 +921,73 @@ router.get('/:id/transcript', authMiddleware, async (req, res) => {
 
     res.json({ success: true, transcript: lines.join('\n') });
   } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// POST /live-sessions/jibri-recording-complete — called by the Jibri
+// finalize-recording script running on the Jitsi droplet after each
+// start/stop recording segment. Not user-authenticated (no browser JWT
+// exists server-side); gated by a shared secret instead. Uploads straight
+// to Cloudinary and appends to the session's recordings list so multiple
+// start/stop segments within one class all show up in Classwork.
+router.post('/jibri-recording-complete', jibriUpload.single('file'), async (req, res) => {
+  try {
+    const secret = req.headers['x-jibri-secret'];
+    if (!secret || secret !== process.env.JIBRI_UPLOAD_SECRET) {
+      return res.status(401).json({ success: false, message: 'Invalid or missing secret' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'file is required' });
+    }
+    const sessionId = req.body.sessionId;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required' });
+    }
+
+    await connectMongoDB();
+    const session = await LiveSession.findById(toId(sessionId));
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+
+    const uploadResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { resource_type: 'video', folder: 'icare/lms-recordings' },
+        (err, result) => (err ? reject(err) : resolve(result))
+      );
+      stream.end(req.file.buffer);
+    });
+
+    session.recordings.push({ url: uploadResult.secure_url, createdAt: new Date() });
+    session.recordingUrl = uploadResult.secure_url; // keep legacy field pointing at the latest segment
+    session.isRecorded = true;
+    await session.save();
+
+    // Latest segment also becomes the lesson's playable video (older
+    // segments remain visible via the session's own recordings list).
+    if (session.linkedLessonId || session.lessonId) {
+      const lId = session.linkedLessonId || session.lessonId;
+      try {
+        const Course = require('../models/Course');
+        const course = await Course.findById(session.courseId);
+        if (course) {
+          course.modules = course.modules.map(mod => ({
+            ...mod.toObject(),
+            lessons: mod.lessons.map(lesson => {
+              if (lesson._id?.toString() === lId) {
+                return { ...lesson.toObject(), videoUrl: uploadResult.secure_url, recordingAvailable: true };
+              }
+              return lesson;
+            }),
+          }));
+          await course.save();
+        }
+      } catch (_) {}
+    }
+
+    console.log(`Jibri recording uploaded for session ${sessionId}: ${uploadResult.secure_url}`);
+    res.json({ success: true, url: uploadResult.secure_url });
+  } catch (e) {
+    console.error('jibri-recording-complete error:', e.message);
     res.status(500).json({ success: false, message: e.message });
   }
 });

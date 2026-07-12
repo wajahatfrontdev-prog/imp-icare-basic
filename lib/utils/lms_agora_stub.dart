@@ -17,7 +17,7 @@ Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstruct
     ));
 
     final options = JitsiMeetConferenceOptions(
-      serverURL: 'https://meet.jit.si',
+      serverURL: 'https://167-99-65-120.nip.io',
       room: roomName,
       configOverrides: {
         'startWithAudioMuted': false,
@@ -45,13 +45,8 @@ void lmsLeaveChannel() { try { _jitsiMeet.hangUp(); } catch (_) {} }
 void lmsMuteMic(bool mute) {}
 void lmsMuteCamera(bool mute) {}
 void lmsSetPanelWidth(bool open) {}
-void lmsStartRecording() {}
-void lmsStopRecordingAndUpload(String sessionId, String backendUrl, String authToken) {}
 Future<void> lmsEnableMediaAndPublish() async {}
 bool lmsIsSessionClosed() => false;
-
-/// Mobile: no browser recording, nothing to wait for.
-String lmsUploadState() => 'done';
 
 /// Mobile: no hard reload concept — caller falls back to normal navigation.
 void lmsHardRedirect(String path) {}

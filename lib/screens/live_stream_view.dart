@@ -337,8 +337,7 @@ class _LiveStreamViewState extends State<LiveStreamView> with SingleTickerProvid
   }
 
   Future<void> _toggleRecording() async {
-    await _controller.toggleRecording(_controller.sessionDocId);
-    setState(() => _isRecording = _controller.isRecording);
+    // Recording is handled server-side by Jibri now.
   }
 
   Future<void> _endSession() async {

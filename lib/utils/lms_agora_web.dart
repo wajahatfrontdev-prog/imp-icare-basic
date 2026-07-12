@@ -16,17 +16,8 @@ external void _lmsJitsiMuteMicJS(JSBoolean mute);
 @JS('lmsJitsiMuteCamera')
 external void _lmsJitsiMuteCameraJS(JSBoolean mute);
 
-@JS('lmsStartRecording')
-external void _lmsStartRecordingJS();
-
-@JS('lmsStopRecordingAndUpload')
-external void _lmsStopRecordingAndUploadJS(JSString sessionId, JSString backendUrl, JSString authToken);
-
 @JS('lmsJitsiIsClosed')
 external JSBoolean _lmsJitsiIsClosedJS();
-
-@JS('lmsUploadState')
-external JSString _lmsUploadStateJS();
 
 // displayName replaces appId+token — Jitsi needs no token for public rooms
 Future<void> lmsJoinChannel(String roomName, String displayName, bool isInstructor) async {
@@ -37,9 +28,6 @@ void lmsLeaveChannel() => _lmsJitsiLeaveJS();
 void lmsMuteMic(bool mute) => _lmsJitsiMuteMicJS(mute.toJS);
 void lmsMuteCamera(bool mute) => _lmsJitsiMuteCameraJS(mute.toJS);
 void lmsSetPanelWidth(bool panelOpen) {}
-void lmsStartRecording() => _lmsStartRecordingJS();
-void lmsStopRecordingAndUpload(String sessionId, String backendUrl, String authToken) =>
-    _lmsStopRecordingAndUploadJS(sessionId.toJS, backendUrl.toJS, authToken.toJS);
 Future<void> lmsEnableMediaAndPublish() async {} // no-op: Jitsi manages media internally
 
 /// True after the user presses Jitsi's own hangup button (readyToClose event)
@@ -48,15 +36,6 @@ bool lmsIsSessionClosed() {
     return _lmsJitsiIsClosedJS().toDart;
   } catch (_) {
     return false;
-  }
-}
-
-/// Recording upload state: 'idle' | 'uploading' | 'done' | 'error'
-String lmsUploadState() {
-  try {
-    return _lmsUploadStateJS().toDart;
-  } catch (_) {
-    return 'done';
   }
 }
 

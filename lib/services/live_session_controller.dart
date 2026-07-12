@@ -176,26 +176,7 @@ class LiveSessionController {
     }
   }
 
-  // ── PUBLIC: toggle recording ──────────────────────────────────────────────
-  Future<void> toggleRecording(String sessionDocId) async {
-    if (!kIsWeb) {
-      return;
-    }
-    if (!isRecording) {
-      lmsStartRecording();
-      isRecording = true;
-      onStateChanged?.call();
-    } else {
-      final token = await SharedPref().getToken();
-      lmsStopRecordingAndUpload(
-        sessionDocId,
-        'https://icare-backend-inky.vercel.app/api',
-        token ?? '',
-      );
-      isRecording = false;
-      onStateChanged?.call();
-    }
-  }
+  // Recording is handled server-side by Jibri now; nothing to toggle here.
 
   // ── PUBLIC: end session ───────────────────────────────────────────────────
   Future<void> endSession({
@@ -208,16 +189,6 @@ class LiveSessionController {
     lmsLeaveChannel();
 
     if (isInstructor) {
-      // Stop recording + upload
-      if (kIsWeb && isRecording && sessionDocId.isNotEmpty) {
-        final token = await SharedPref().getToken();
-        lmsStopRecordingAndUpload(
-          sessionDocId,
-          'https://icare-backend-inky.vercel.app/api',
-          token ?? '',
-        );
-      }
-
       // Save session to backend
       if (sessionDocId.isNotEmpty && sessionDocId != courseId) {
         await _lms.endAndSaveSession(

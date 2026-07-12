@@ -10,7 +10,13 @@ const liveSessionSchema = new mongoose.Schema({
   meetingLink: String,
   meetingId: String,
   meetingPassword: String,
-  recordingUrl: String,
+  recordingUrl: String, // legacy single-recording field, kept for old sessions
+  // Multiple recordings per session — each Jibri start/stop cycle produces
+  // its own segment, all shown together in the course's Classwork.
+  recordings: [{
+    url: String,
+    createdAt: { type: Date, default: Date.now },
+  }],
   status: {
     type: String,
     enum: ['scheduled', 'live', 'completed', 'cancelled'],

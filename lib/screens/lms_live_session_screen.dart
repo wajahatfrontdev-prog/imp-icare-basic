@@ -53,7 +53,6 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
   bool _chatOpen = false;
   bool _participantsOpen = false;
   bool _handRaised = false;
-  bool _isRecording = false;
   late TabController _panelTab;
 
   // Chat — synced with backend
@@ -99,14 +98,6 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     _chatScroll.dispose();
     _panelTab.dispose();
     LmsLiveSessionScreen.activeCourseId = null; // allow popup again after leaving
-    // Safety net: if the screen closes without going through _finishSession
-    // (e.g. back navigation), still upload the recording so it isn't lost.
-    if (kIsWeb && widget.isInstructor && _isRecording && !_finishing && _sessionDocId.isNotEmpty) {
-      final sid = _sessionDocId;
-      SharedPref().getToken().then((token) {
-        lmsStopRecordingAndUpload(sid, 'https://icare-backend-inky.vercel.app/api', token ?? '');
-      });
-    }
     lmsLeaveChannel();
     super.dispose();
   }
@@ -171,33 +162,6 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       await _initVideoSession();
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
-    }
-  }
-
-  Future<void> _toggleRecording() async {
-    if (!kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recording is only available on web'), duration: Duration(seconds: 2)),
-      );
-      return;
-    }
-    if (!_isRecording) {
-      lmsStartRecording();
-      if (mounted) setState(() => _isRecording = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recording started'), backgroundColor: Colors.red, duration: Duration(seconds: 2)),
-      );
-    } else {
-      final token = await SharedPref().getToken();
-      lmsStopRecordingAndUpload(
-        _sessionDocId,
-        'https://icare-backend-inky.vercel.app/api',
-        token ?? '',
-      );
-      if (mounted) setState(() => _isRecording = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recording stopped — uploading to LMS...'), backgroundColor: Colors.green, duration: Duration(seconds: 3)),
-      );
     }
   }
 
@@ -353,7 +317,9 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       if (mounted) setState(() => _cameraViewName = viewId);
 
       final sessionRoom = _sessionDocId.isNotEmpty ? _sessionDocId : widget.sessionId;
-      final roomName = 'icare${sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').substring(0, sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').length.clamp(0, 20))}';
+      // Full sessionId (not truncated) so Jibri's finalize script can strip
+      // the 'icare' prefix and recover the exact MongoDB _id losslessly.
+      final roomName = 'icare${sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}';
 
       // Join Jitsi after the platform view is in the DOM (no token needed)
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -366,17 +332,6 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
           }
         });
       });
-
-      // Auto-start recording for instructor once Jitsi has had time to join.
-      // Recording is saved to the course lesson when the session ends.
-      if (widget.isInstructor) {
-        Future.delayed(const Duration(seconds: 4), () {
-          if (mounted) {
-            lmsStartRecording();
-            setState(() => _isRecording = true);
-          }
-        });
-      }
     } catch (e) {
       debugPrint('LMS Jitsi init error: $e');
     }
@@ -450,7 +405,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     );
 
     final sessionRoom = _sessionDocId.isNotEmpty ? _sessionDocId : widget.sessionId;
-    final roomName = 'icare${sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').substring(0, sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').length.clamp(0, 20))}';
+    final roomName = 'icare${sessionRoom.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}';
     await lmsJoinChannel(roomName, _currentUserName, widget.isInstructor);
 
     // Fallback: mark joined after 2s
@@ -588,21 +543,9 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     }
 
     if (widget.isInstructor) {
-      if (kIsWeb && _isRecording && _sessionDocId.isNotEmpty) {
-        final token = await SharedPref().getToken();
-        lmsStopRecordingAndUpload(
-          _sessionDocId,
-          'https://icare-backend-inky.vercel.app/api',
-          token ?? '',
-        );
-        // Wait for the Cloudinary upload to finish (up to 2 minutes) —
-        // navigating away earlier would kill the upload and lose the video.
-        for (int i = 0; i < 120; i++) {
-          final state = lmsUploadState();
-          if (state == 'done' || state == 'error') break;
-          await Future.delayed(const Duration(seconds: 1));
-        }
-      }
+      // Recording is handled entirely server-side by Jibri now — it
+      // auto-stops when the conference ends and uploads to LMS via its own
+      // finalize script, independent of this client's lifecycle.
       if (_sessionDocId.isNotEmpty && _sessionDocId != widget.courseId) {
         try {
           await _lms.endAndSaveSession(
@@ -689,30 +632,22 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
       );
     }
 
-    // Session ending: show a saving screen while the recording uploads and
-    // backend calls finish. A hard redirect to /dashboard follows.
+    // Session ending: brief transition screen before the hard redirect to
+    // /dashboard. Recording (if any) is handled entirely server-side by
+    // Jibri, so there's nothing to wait for here.
     if (_finishing) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF1C2333),
+      return const Scaffold(
+        backgroundColor: Color(0xFF1C2333),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: Colors.white),
-              const SizedBox(height: 20),
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 20),
               Text(
-                widget.isInstructor && _isRecording
-                    ? 'Saving session recording...'
-                    : 'Leaving session...',
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                'Leaving session...',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
               ),
-              if (widget.isInstructor && _isRecording) ...[
-                const SizedBox(height: 8),
-                const Text(
-                  'Please wait — do not close this tab',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
-                ),
-              ],
             ],
           ),
         ),
@@ -726,33 +661,7 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
     if (kIsWeb && _cameraViewName != null) {
       return Scaffold(
         backgroundColor: const Color(0xFF1C2333),
-        body: Stack(
-          children: [
-            SizedBox.expand(child: HtmlElementView(viewType: _cameraViewName!)),
-            if (_isRecording)
-              Positioned(
-                top: 12,
-                left: 12,
-                child: IgnorePointer(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Container(
-                        width: 8, height: 8,
-                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 6),
-                      const Text('REC', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                    ]),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        body: SizedBox.expand(child: HtmlElementView(viewType: _cameraViewName!)),
       );
     }
 
@@ -858,26 +767,6 @@ class _LmsLiveSessionScreenState extends State<LmsLiveSessionScreen>
             const SizedBox(width: 4),
             Text('${_participants.length}', style: const TextStyle(color: Colors.white54, fontSize: 13)),
           ]),
-          const SizedBox(width: 10),
-          // Recording button (instructor only)
-          if (widget.isInstructor)
-            GestureDetector(
-              onTap: _toggleRecording,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _isRecording ? Colors.red : Colors.white24,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(_isRecording ? Icons.stop_circle_rounded : Icons.fiber_manual_record_rounded,
-                      color: Colors.white, size: 14),
-                  const SizedBox(width: 4),
-                  Text(_isRecording ? 'Stop REC' : 'Record',
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                ]),
-              ),
-            ),
           const SizedBox(width: 8),
           const Icon(Icons.lock_rounded, color: Colors.white54, size: 18),
         ],
